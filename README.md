@@ -1,31 +1,32 @@
-# ORIN Core
+# ORIN Core 🛰️
 
-The ambient AI identity layer for Solana Network State.
+> **The Ambient AI Identity Layer for the Solana Network State.**
 
-## 🚀 Phase 1 Goals
-
-- **On-chain Identity**: Anchor-based Guest PDA structure.
-- **Real-time Bridge**: Node.js + Firebase synchronization.
-- **IoT Control**: Mocked Philips Hue & Nest API integration.
-
-## 🛠 Tech Stack
-
-- **Smart Contracts**: Rust / Anchor
-- **Backend**: Node.js / TypeScript
-- **Real-time DB**: Firebase
-- **Frontend**: Next.js (via @Defidoctor10)
-
-## 👥 Core Team
-
-- **Shalom**: Founder & Vision
-- **Kyle (@dex_p)**: Tech Lead (Backend & Smart Contracts)
-- **Defi Doctor**: Frontend & UI/UX
-- **Victor**: Strategy & M&A
+ORIN is a revolutionary DePIN protocol that recognizes users across physical spaces—hotels, homes, and cars—and automatically synchronizes their environment to their saved preferences via Solana-based identities.
 
 ---
 
-## 📂 Project Structure
+## 🏗️ Phase 1: MVP Architecture
+- **[On-chain]** **Sovereign Identity:** Anchor-based Guest PDA structure for immutable preference storage.
+- **[Middleware]** **Real-time Bridge:** High-performance Node.js & Firebase synchronization for sub-second physical response.
+- **[Physical]** **IoT Control:** Integrated Philips Hue & Google Nest control logic (Mocked for Phase 1 Demo).
 
-- `programs/`: Smart contract code (Anchor/Rust).
-- `backend/`: Node.js listener and Firebase synchronization logic.
-- `frontend/`: Next.js application for user interaction and visualization.
+## 🛠️ Tech Stack
+- **L1 & Logic:** `Solana` / `Anchor` / `Rust`
+- **Infrastructure:** `Node.js` / `TypeScript` / `Firebase Real-time DB`
+- **UI/UX:** `Next.js` / `Tailwind CSS` / `Solana Wallet Adapter`
+
+## 📂 Project Structure
+- `programs/` - The source of truth: Smart contracts in Rust.
+- `backend/` - The nervous system: Node.js listener and Firebase sync logic.
+- `frontend/` - The interface: Web3 dashboard for guest management.
+- `docs/` - Architecture diagrams and vision briefs.
+
+## 👥 Core Team
+- **Shalom:** Founder & Visionary (10+ years in Hospitality)
+- **Kyle (@dex_p):** Technical Lead (Smart Contracts & Backend)
+- **Defi Mantle:** Frontend & UI/UX Engineer
+- **Victor:** Strategy & M&A
+
+---
+*Built with passion for the Solana Network State Spring 2026 Hackathon.*
