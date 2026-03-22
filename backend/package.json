@@ -6,7 +6,7 @@
   "description": "",
   "scripts": {
     "start": "ts-node src/listener.ts",
-    "dev": "ts-node src/listener.ts",
+    "simulate": "ts-node src/simulate_frontend.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

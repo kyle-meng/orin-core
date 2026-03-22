@@ -36,15 +36,19 @@ export function startSolanaListener() {
             console.log(`[ORIN-Backend] ✨ Extracted Preferences:`, mockParsedPreferences);
 
             try {
-                // 1. Sync to Firebase Real-time DB
-                // This gives the frontend immediate confirmation of the user presence
-                const dbRef = admin.database().ref(`/rooms/guest_${pubkey}`);
-                await dbRef.update({
-                    has_arrived: true,
-                    preferences: mockParsedPreferences,
-                    last_updated: Date.now()
-                });
-                console.log(`[Firebase Sync] ✅ Triggered Real-time DB update for Frontend.`);
+                // 1. Sync to Firebase Real-time DB (Mocked if no credentials)
+                if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+                    const dbRef = admin.database().ref(`/rooms/guest_${pubkey}`);
+                    await dbRef.update({
+                        has_arrived: true,
+                        preferences: mockParsedPreferences,
+                        last_updated: Date.now()
+                    });
+                    console.log(`[Firebase Sync] ✅ Triggered Real-time DB update for Frontend.`);
+                } else {
+                    console.log(`[Firebase Sync Mock] ⚠️ No Google Credentials found. Bypassing real Firebase hit.`);
+                    console.log(`[Firebase Sync Mock] ✅ Simulated DB Update for /rooms/guest_${pubkey}`);
+                }
 
                 // 2. Bridge to Physical Layer (IoT / MQTT)
                 adjustRoomEnvironment(pubkey, mockParsedPreferences);
