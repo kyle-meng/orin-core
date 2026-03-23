@@ -5,68 +5,127 @@ import './firebase_config'; // Initialize Firebase Admin
 import * as fs from 'fs';
 import * as path from 'path';
 import { BorshCoder, Idl } from '@coral-xyz/anchor';
+import * as http from 'http';
+import { createHash } from 'crypto';
 
-// NOTE: Replace with your deployed Program ID or dynamic devnet string
+// NOTE: Replace with your deployed Program ID
 const PROGRAM_ID = new PublicKey("FqtrHgdYTph1DSP9jDYD7xrKPrjSjCTtnw6fyKMmboYk");
-
-// Change to your actual Solana RPC (Devnet/Mainnet/Local)
 const NETWORK = process.env.NETWORK || 'Localnet';
 const RPC_ENDPOINT = NETWORK === 'Localnet' ? 'http://127.0.0.1:8899' : 'https://api.devnet.solana.com';
-
 const connection = new Connection(RPC_ENDPOINT, 'confirmed');
 
-// Load IDL and configure Coder
 const IDL_PATH = path.resolve(__dirname, "../../target/idl/orin_identity.json");
 const idl = JSON.parse(fs.readFileSync(IDL_PATH, "utf8")) as Idl;
 const coder = new BorshCoder(idl);
 
+// ---------------------------------------------------------
+// 🚀 OFF-CHAIN PAYLOAD CACHE (The Web2.5 Hybrid Model)
+// Holds incoming sensitive JSON string until Solana anchor verifies it
+// ---------------------------------------------------------
+const offChainPayloadCache = new Map<string, any>();
+
+const httpServer = http.createServer((req, res) => {
+    // Only accept POST requests on /api/preferences
+    if (req.method === 'POST' && req.url === '/api/preferences') {
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                // Must ensure exact string trim matching during SHA256 processing to avoid mismatched hashes
+                const sanitizedBody = body.trim();
+                const hashBuffer = createHash("sha256").update(sanitizedBody).digest(); 
+                const hashHex = hashBuffer.toString('hex');
+
+                console.log(`[HTTP Server] 📦 Received Off-Chain JSON Payload.`);
+                console.log(`[HTTP Server] 🔐 Computed SHA256: ${hashHex}`);
+
+                offChainPayloadCache.set(hashHex, JSON.parse(sanitizedBody));
+                
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: "success", info: "Payload staged in Node.js. Awaiting Solana Hash Verification signal.", hash: hashHex }));
+            } catch (err) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: "Invalid Payload or Hash mechanism." }));
+            }
+        });
+    } else {
+        res.writeHead(404);
+        res.end();
+    }
+});
+
+httpServer.listen(3001, () => {
+    console.log(`\n[ORIN-Backend] 🌐 HTTP Payload Server listening for Web2 JSON on port 3001`);
+});
+
+// ---------------------------------------------------------
+// 🚀 ON-CHAIN VERIFICATION LISTENER
+// ---------------------------------------------------------
 export function startSolanaListener() {
     console.log(`[ORIN-Backend] 🚀 Starting Solana listener on ${RPC_ENDPOINT}`);
     console.log(`[ORIN-Backend] 📡 Watching Program ID: ${PROGRAM_ID.toBase58()}\n`);
 
-    // Listen to all account changes owned by our Anchor program
     connection.onProgramAccountChange(
         PROGRAM_ID,
         async (updatedAccountInfo, context) => {
-            console.log("---------------------------------------------------------");
-            console.log(`[ORIN-Backend] 🔔 On-chain Data Changed at slot ${context.slot}!`);
-            
+            console.log("\n---------------------------------------------------------");
+            console.log(`[ORIN-Backend] 🔔 On-chain Verification Hash Recorded at slot ${context.slot}!`);
             const pubkey = updatedAccountInfo.accountId.toBase58();
-            // Decode the data right from the account buffer
-            let parsedPreferences;
+            
+            let onChainHashHex = "";
             try {
-                // The account name in IDL usually needs lowerCamelCase for Anchor decode
                 const decoded = coder.accounts.decode("GuestIdentity", updatedAccountInfo.accountInfo.data);
-                // "preferences" is stored as a stringified JSON on-chain
-                parsedPreferences = JSON.parse(decoded.preferences || "{}");
+                // Extract the 32-byte preferencesHash stored on-chain
+                if (decoded.preferencesHash) {
+                    onChainHashHex = Buffer.from(decoded.preferencesHash).toString('hex');
+                }
             } catch (err) {
-                console.error("[ORIN-Backend] ❌ Failed to decode account or parse JSON preferences:", err);
-                parsedPreferences = { temp: 22.5, light_color: "#FF5733", brightness: 85 }; // fallback
+                console.error("[ORIN-Backend] ❌ Failed to decode GuestIdentity:", err);
+                return;
             }
             
-            console.log(`[ORIN-Backend] 👤 Guest Account: ${pubkey}`);
-            console.log(`[ORIN-Backend] ✨ Extracted Preferences:`, parsedPreferences);
+            console.log(`[ORIN-Backend] 👤 Guest PDA: ${pubkey}`);
+
+            // Skip initialization events (hash is zeroes)
+            if (onChainHashHex === "0000000000000000000000000000000000000000000000000000000000000000") {
+                console.log(`[ORIN-Backend] 🌱 Initialized account detected. Skipping environment sync.`);
+                console.log("---------------------------------------------------------");
+                return;
+            }
+
+            console.log(`[ORIN-Backend] 📜 On-Chain Hash: ${onChainHashHex}`);
+
+            const verifiedPayload = offChainPayloadCache.get(onChainHashHex);
+
+            if (!verifiedPayload) {
+                console.warn(`[ORIN-Backend] ⚠️ Hash mismatch or Private Payload missing! Cannot execute changes.`);
+                console.log("---------------------------------------------------------");
+                return;
+            }
+
+            console.log(`[ORIN-Backend] 🔐 HASH VERIFIED SUCCESSFULLY! Data is Authored & Untampered.`);
+            console.log(`[ORIN-Backend] ✨ Authorized Payload:`, verifiedPayload);
 
             try {
-                // 1. Sync to Firebase Real-time DB (Mocked if no credentials)
                 if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
                     const dbRef = admin.database().ref(`/rooms/guest_${pubkey}`);
                     await dbRef.update({
                         has_arrived: true,
-                        preferences: parsedPreferences,
+                        preferences: verifiedPayload,
                         last_updated: Date.now()
                     });
                     console.log(`[Firebase Sync] ✅ Triggered Real-time DB update for Frontend.`);
                 } else {
-                    console.log(`[Firebase Sync Mock] ⚠️ No Google Credentials found. Bypassing real Firebase hit.`);
-                    console.log(`[Firebase Sync Mock] ✅ Simulated DB Update for /rooms/guest_${pubkey}`);
+                    console.log(`[Firebase Sync Mock] ⚠️ Bypassing real Firebase hit (No GCP credentials).`);
+                    console.log(`[Firebase Sync Mock] ✅ Simulated DB Update.`);
                 }
 
-                // 2. Bridge to Physical Layer (IoT / MQTT)
-                adjustRoomEnvironment(pubkey, parsedPreferences);
+                adjustRoomEnvironment(pubkey, verifiedPayload);
+                // Optionally garbage collect the memory cache here
+                offChainPayloadCache.delete(onChainHashHex);
 
             } catch (error) {
-                console.error("[ORIN-Backend] ❌ Failed to sync/bridge data:", error);
+                console.error("[ORIN-Backend] ❌ Failed to execute system integration:", error);
             }
             console.log("---------------------------------------------------------");
         },
@@ -74,7 +133,6 @@ export function startSolanaListener() {
     );
 }
 
-// Start listener immediately when executed
 if (require.main === module) {
     startSolanaListener();
 }

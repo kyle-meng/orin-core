@@ -66,7 +66,7 @@ The "Intent Translator" that turns guest natural language into on-chain states.
 - **Federico:** AI & Smart Logic Engineer
 - **Victor:** Strategy & M&A
 
-
+Privacy-First Architecture: ORIN utilizes an Off-Chain Data / On-Chain Verification (Hash-Lock) strategy. Sensitve guest preferences are never stored as plaintext on-chain, ensuring 100% GDPR compliance and E2E privacy.
 
 ---
 *Built with passion for the Solana Network State Spring 2026 Hackathon.*

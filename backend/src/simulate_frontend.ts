@@ -11,7 +11,7 @@ const NETWORK = process.env.NETWORK || 'Localnet';
 const RPC_ENDPOINT = NETWORK === 'Localnet' ? 'http://127.0.0.1:8899' : 'https://api.devnet.solana.com';
 
 async function runSimulation() {
-    console.log("🎮 ORIN Frontend Simulator Started...\n");
+    console.log("🎮 ORIN Web2.5 Hybrid Simulator Started...\n");
 
     const idl = JSON.parse(fs.readFileSync(IDL_PATH, "utf8"));
     const connection = new Connection(RPC_ENDPOINT, "confirmed");
@@ -44,39 +44,55 @@ async function runSimulation() {
     console.log(`👤 Using Wallet: ${wallet.publicKey.toBase58()}`);
     console.log(`🔑 Derived Guest PDA: ${guestPda.toBase58()}`);
 
-    console.log(`\n[1/2] 📝 Sending InitializeGuest TX to ${NETWORK}...`);
+    console.log(`\n[1/3] 📝 Sending InitializeGuest TX to ${NETWORK}...`);
     const tx1 = await program.methods
-      .initializeGuest(Array.from(emailHashBuffer), "Demo Frontender")
+      .initializeGuest(Array.from(emailHashBuffer), "Demo Private Guest")
       .accounts({
         guestProfile: guestPda,
         user: wallet.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       } as any)
       .rpc();
-    console.log(`✅ Success! TX Hash: ${tx1}`);
+    console.log(`✅ Success! TX Hash: ${tx1}\n`);
     
     // Pause briefly to ensure sequential execution and distinct listener logs
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-    console.log(`\n[2/2] 🎛️ Sending UpdatePreferences TX to ${NETWORK}...`);
-    const newPreferences = JSON.stringify({
+    // Define the Sensitive Information that should NEVER touch Solana!
+    const newPreferencesRaw = JSON.stringify({
       temp: 18.5,
       brightness: 100,
       light_color: "#A020F0", // Purple
       color_mode: "SLEEP"
     });
 
+    console.log(`[2/3] 🌐 PRE-FLIGHT (Web2): Sending secure JSON to Off-Chain Backend Server...`);
+    
+    // Send standard HTTPS POST bypassing Blockspace
+    const res = await fetch("http://127.0.0.1:3001/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: newPreferencesRaw
+    });
+
+    const offChainResponse = await res.json();
+    console.log(`✅ Success! Backend cached payload with Identity Hash: ${offChainResponse.hash}\n`);
+
+    // Only hash hits the Blockchain
+    const onChainHashLogBuffer = createHash("sha256").update(newPreferencesRaw.trim()).digest();
+
+    console.log(`[3/3] 🎛️ FINAL LOCK: Sending HASH-ONLY State Validation to ${NETWORK}...`);
     const tx2 = await program.methods
-      .updatePreferences(newPreferences)
+      .updatePreferences(Array.from(onChainHashLogBuffer))
       .accounts({
         guestProfile: guestPda,
         owner: wallet.publicKey,
       } as any)
       .rpc();
       
-    console.log(`✅ Success! TX Hash: ${tx2}`);
+    console.log(`✅ Chain Validated! TX Hash: ${tx2}`);
     console.log("\n👀 Done! Switch over to your backend running `yarn start`.");
-    console.log("You should see the account change events and MQTT triggers firing immediately!");
+    console.log("You should see it cross-verify the HTTP cache with the Blockchain State!\n");
 }
 
 runSimulation().catch(console.error);

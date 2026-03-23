@@ -6,22 +6,18 @@ import { createHash } from "crypto";
 import { expect } from "chai";
 
 describe("orin_identity", () => {
-  // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
   const provider = anchor.getProvider() as anchor.AnchorProvider;
   
   const program = anchor.workspace.orinIdentity as Program<OrinIdentity>;
 
-  // Variables for our tests
   const testEmail = "test.guest@orin.network";
   let guestPda: PublicKey;
   let emailHashBuffer: Buffer;
 
   before(async () => {
-    // 1. Calculate the 32-byte sha256 hash required by our Anchor PDA
     emailHashBuffer = createHash("sha256").update(testEmail.toLowerCase().trim()).digest();
     
-    // 2. Derive the expected PDA
     [guestPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("guest"), emailHashBuffer],
       program.programId
@@ -31,7 +27,6 @@ describe("orin_identity", () => {
   it("Initializes a new Guest Identity!", async () => {
     const guestName = "Satoshi Nakamoto";
 
-    // Call the `initialize_guest` method
     const tx = await program.methods
       .initializeGuest(Array.from(emailHashBuffer), guestName)
       .accounts({
@@ -43,56 +38,53 @@ describe("orin_identity", () => {
     
     console.log("💳 Initialize TX Signature:", tx);
 
-    // Fetch the stored account data
     const guestAccount = await program.account.guestIdentity.fetch(guestPda);
 
-    // Verify
     expect(guestAccount.name).to.equal(guestName);
-    expect(guestAccount.preferences).to.equal("{}");
+    // Ensure the hash is initialized to 32 bytes of zeros
+    expect(guestAccount.preferencesHash).to.deep.equal(Array(32).fill(0));
     expect(guestAccount.owner.toBase58()).to.equal(provider.wallet.publicKey.toBase58());
     expect(guestAccount.stayCount).to.equal(0);
   });
 
-  it("Updates the Guest's Ambient Preferences!", async () => {
-    // Mock incoming preference from the UI
-    const newPreferences = JSON.stringify({
+  it("Updates the Guest's Ambient Preferences (Privacy-First Hash Lock)!", async () => {
+    // We never send the JSON structure on-chain anymore. Just the hash verification lock.
+    const newPreferencesRaw = JSON.stringify({
       temp: 21.5,
       brightness: 100,
       light_color: "#1E90FF",
       color_mode: "FOCUS",
     });
+    
+    // Hash the precise untampered payload
+    const newPreferencesHashBuffer = createHash("sha256").update(newPreferencesRaw.trim()).digest();
 
-    // Call the `update_preferences` method
     const tx = await program.methods
-      .updatePreferences(newPreferences)
+      .updatePreferences(Array.from(newPreferencesHashBuffer))
       .accounts({
         guestProfile: guestPda,
         owner: provider.wallet.publicKey,
       } as any)
       .rpc();
 
-    console.log("🎛️ Update Preferences TX Signature:", tx);
+    console.log("🎛️ Update Preferences Verification Hash TX Signature:", tx);
 
-    // Fetch the updated account data
     const updatedAccount = await program.account.guestIdentity.fetch(guestPda);
 
-    // Verify
-    expect(updatedAccount.preferences).to.equal(newPreferences);
-    expect(updatedAccount.stayCount).to.equal(1); // Ensure stay count incremented
+    // Verify it stored the exact exact 32 bytes footprint
+    expect(updatedAccount.preferencesHash).to.deep.equal(Array.from(newPreferencesHashBuffer));
+    expect(updatedAccount.stayCount).to.equal(1);
 
-    console.log("\n✅ [Test Passed] On-chain state is perfectly updated.");
-    console.log("   Stored Preferences:", updatedAccount.preferences);
+    console.log("\n✅ [Test Passed] On-chain verification hash is perfectly secured.");
   });
 
   it("Fails when an unauthorized user tries to update preferences", async () => {
-    // Create an attacker wallet
     const attackerKeypair = anchor.web3.Keypair.generate();
-    
-    // Attempt to update with the attacker's wallet (should fail due to has_one = owner)
     let errorOccurred = false;
+    
     try {
       await program.methods
-        .updatePreferences("{\"malicious\": true}")
+        .updatePreferences(Array(32).fill(1)) // malicious hash
         .accounts({
           guestProfile: guestPda,
           owner: attackerKeypair.publicKey,

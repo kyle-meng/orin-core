@@ -26,28 +26,24 @@ pub mod orin_identity {
         guest_profile.name = name;                       // Store guest name
         guest_profile.loyalty_points = 0;                // Initialize points to 0
         guest_profile.stay_count = 0;                    // Initialize stay count to 0
-        guest_profile.preferences = "{}".to_string();    // Initialize preferences as empty JSON
+        guest_profile.preferences_hash = [0; 32];        // Wait for off-chain payload hash
 
         msg!("Guest Identity Initialized: {}", guest_profile.name);
         Ok(())
     }
 
-    /// Updates the guest's ambient preferences (Real-time IoT Bridge Logic)
-    /// @param new_prefs: The new JSON preference string (e.g., {"temp": 22, "light": "blue"})
-    pub fn update_preferences(ctx: Context<UpdatePreferences>, new_prefs: String) -> Result<()> {
-        // 1. Parameter validation: Check if preferences fit in allocated space (Max 500 characters/bytes)
-        // 500 bytes is sufficient for a complex environment config JSON
-        require!(new_prefs.as_bytes().len() <= 500, OrinError::PrefsTooLong);
-
+    /// Updates the guest's ambient preferences (Privacy-First Hash Verification Logic)
+    /// @param new_prefs_hash: The SHA256 Hash of the off-chain JSON preference string 
+    pub fn update_preferences(ctx: Context<UpdatePreferences>, new_prefs_hash: [u8; 32]) -> Result<()> {
         let guest_profile = &mut ctx.accounts.guest_profile;
 
-        // 2. Update preferences
-        guest_profile.preferences = new_prefs;
+        // 1. Update preferences verification hash
+        guest_profile.preferences_hash = new_prefs_hash;
 
-        // 3. Automatically increment room adjustments count (simplified logic: each update represents an environmental activation)
+        // 2. Automatically increment room adjustments count (simplified logic: each update represents an environmental activation)
         guest_profile.stay_count += 1;
 
-        msg!("Preferences updated for Guest: {}", guest_profile.name);
+        msg!("Preferences HASH updated for Guest: {:?}", guest_profile.preferences_hash);
         Ok(())
     }
 }
@@ -64,8 +60,8 @@ pub struct InitializeGuest<'info> {
     #[account(
         init,
         payer = user,
-        // Space calculation: 8 (discriminator) + 32 (pubkey) + 32 (hash) + 4+100 (name) + 4+500 (prefs) + 8 (u64) + 4 (u32)
-        space = 8 + 32 + 32 + (4 + 100) + (4 + 500) + 8 + 4,
+        // Space calculation: 8 (discriminator) + 32 (pubkey) + 32 (hash) + 4+100 (name) + 32 (prefs_hash) + 8 (u64) + 4 (u32)
+        space = 8 + 32 + 32 + (4 + 100) + 32 + 8 + 4,
         seeds = [b"guest", email_hash.as_ref()],
         bump
     )]
@@ -97,12 +93,12 @@ pub struct UpdatePreferences<'info> {
 
 #[account]
 pub struct GuestIdentity {
-    pub owner: Pubkey,          // 32 bytes: Account owner (AA context or private key wallet)
-    pub email_hash: [u8; 32],   // 32 bytes: Associated email hash
-    pub name: String,           // 4 + 100 bytes: User's name/nickname
-    pub preferences: String,    // 4 + 500 bytes: Environment preferences JSON string
-    pub loyalty_points: u64,    // 8 bytes: Loyalty points (for future Phase extensions)
-    pub stay_count: u32,        // 4 bytes: Number of stays/activations
+    pub owner: Pubkey,               // 32 bytes: Account owner (AA context or private key wallet)
+    pub email_hash: [u8; 32],        // 32 bytes: Associated email hash
+    pub name: String,                // 4 + 100 bytes: User's name/nickname
+    pub preferences_hash: [u8; 32],  // 32 bytes: Security HASH validating the off-chain environment preferences
+    pub loyalty_points: u64,         // 8 bytes: Loyalty points (for future Phase extensions)
+    pub stay_count: u32,             // 4 bytes: Number of stays/activations
 }
 
 /// ---------------------------
@@ -113,8 +109,6 @@ pub struct GuestIdentity {
 pub enum OrinError {
     #[msg("The provided name is too long. Please limit to 100 characters.")]
     NameTooLong,
-    #[msg("The preferences configuration data exceeds the maximum allowed size (500 characters).")]
-    PrefsTooLong,
     #[msg("Identity verification failed: Only the owner of this account can modify its data.")]
     UnauthorizedAccess,
 }
