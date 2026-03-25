@@ -1,11 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
 const RoomControl = dynamic(() => import("@/components/RoomControl"), {
   ssr: false,
 });
+
+const WalletMultiButton = dynamic(
+  () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
+  { ssr: false }
+);
 
 export default function Home() {
   return (
