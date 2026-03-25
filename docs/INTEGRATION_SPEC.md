@@ -1,11 +1,11 @@
-# ORIN 🚀 Frontend Integration Spec
+﻿# ORIN �Ys? Frontend Integration Spec
 
 Hi Defi Mantle,
 
 Welcome to the ORIN Phase 1 architecture. This document outlines the foundational bridges connecting your Next.js application to the Solana blockchain (Anchor) and our real-time synchronization layer (Firebase). 
 
 Our state architecture follows a distinct flow to ensure sub-second UI updates while maintaining decentralization:
-**Solana (Source of Truth)** ➔ **Node.js Listener (Sync)** ➔ **Firebase Real-time DB (Low-latency UI)** ➔ **React State**.
+**Solana (Source of Truth)** �z" **Node.js Listener (Sync)** �z" **Firebase Real-time DB (Low-latency UI)** �z" **React State**.
 
 Below are the types, derivation methods, and subscription hooks you need to pull this together seamlessly.
 
@@ -17,7 +17,7 @@ In ORIN, a user's identity is entirely abstracted via an email hash. The Anchor 
 
 **Seeds:** `[b"guest", sha256(email)]`
 
-### 🔧 TypeScript Implementation:
+### �Y"� TypeScript Implementation:
 ```typescript
 import { PublicKey } from '@solana/web3.js';
 // Make sure to install js-sha256 via npm/yarn
@@ -53,7 +53,7 @@ Our smart contract utilizes a **Privacy-First Hybrid Architecture**. Instead of 
 
 Here is the exact TypeScript type mapping you should use for your state management and UI scaffolding:
 
-### 🔧 Types:
+### �Y"� Types:
 ```typescript
 /**
  * Room Environmental Preferences (The JSON string parsed)
@@ -95,7 +95,7 @@ export interface FirebaseGuestState {
 
 Since querying Solana RPCs for rapid UI feedback is often too slow and rate-limited, the UI *reads* from Firebase. Use this snippet to trigger your Next.js/React re-renders "instantly" when a user checks in or updates their ambient settings.
 
-### 🔧 React Hook Example:
+### �Y"� React Hook Example:
 ```typescript
 import { useEffect, useState } from 'react';
 import { getDatabase, ref, onValue, off } from 'firebase/database';
@@ -131,7 +131,7 @@ export function useGuestRealtimeState(guestPda: string) {
 }
 ```
 
-**📝 Next Steps for Frontend:**
+**�Y"� Next Steps for Frontend:**
 1. Implement the UI using the `RoomPreferences` interface.
 2. **Hybrid State Mutation**: To update preferences in a privacy-preserving way:
    - **Step A:** Send the raw JSON string to our backend HTTP Gateway (`POST /api/preferences`).
@@ -140,3 +140,66 @@ export function useGuestRealtimeState(guestPda: string) {
 3. Read the state updates via the `useGuestRealtimeState` hook to reflect UI changes instantly.
 
 Feel free to ping the Backend team if you need any adjustments to the payload shapes!
+
+---
+
+## 4. Update 2026-03: Production Integration Path
+
+The integration now includes a production API gateway and persistent state:
+
+### API ingress
+
+- Endpoint: `POST /api/v1/voice-command`
+- Backend file: `backend/src/api/server.ts`
+
+Expected request body:
+
+```json
+{
+  "guestPda": "<base58_pda>",
+  "userInput": "Set room to comfort mode",
+  "guestContext": {
+    "name": "Guest Name",
+    "loyaltyPoints": 1200,
+    "history": ["prefers warm lighting"]
+  }
+}
+```
+
+### Hash-lock verification runtime
+
+1. API stores pending command in Redis.
+2. Solana account mutation updates `preferences_hash`.
+3. `backend/src/listener.ts` reads on-chain hash.
+4. `OrinAgent` rebuilds payload and generates local hash.
+5. Hash compare:
+   - Equal: publish MQTT (`MQTT_TOPIC`) + save `response.mp3`
+   - Different: security alert (possible MITM/desync)
+
+### Canonical hashing requirement
+
+Hash generation and verification must use the same canonical function in:
+
+- `backend/src/shared/hash.ts`
+
+Do not implement ad-hoc JSON serialization in clients/services if hash-lock is expected to match.
+
+### Runtime config
+
+Use:
+
+- `.env.example`
+- `backend/.env.example`
+
+Critical vars include:
+
+- `RPC_ENDPOINT`
+- `PROGRAM_ID`
+- `GOOGLE_API_KEY`
+- `DEEPGRAM_API_KEY`
+- `MQTT_BROKER_URL`
+- `MQTT_TOPIC`
+- `REDIS_URL`
+- `ENCRYPTION_SECRET`
+
+

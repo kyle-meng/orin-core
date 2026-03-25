@@ -1,143 +1,148 @@
-import { Connection, PublicKey } from '@solana/web3.js';
-import * as admin from 'firebase-admin';
-import { adjustRoomEnvironment } from './mqtt_mock';
-import './firebase_config'; // Initialize Firebase Admin
-import * as fs from 'fs';
-import * as path from 'path';
-import { BorshCoder, Idl } from '@coral-xyz/anchor';
-import * as http from 'http';
-import { createHash } from 'crypto';
+import { BorshCoder, Idl } from "@coral-xyz/anchor";
+import { Connection } from "@solana/web3.js";
+import * as fs from "fs";
+import * as path from "path";
+import mqtt from "mqtt";
+import { OrinAgent } from "./ai_agent";
+import { validateEnvOrExit } from "./config/validate_env";
+import { ANCHOR_ACCOUNTS, IO_TOPICS, PATHS, PROGRAM_ID, RPC_ENDPOINT } from "./shared/constants";
+import { createRequestLogger, logger } from "./shared/logger";
+import { stateProvider } from "./state";
+import { GuestContext } from "./ai_agent";
+import { getEnv } from "./config/env";
 
-// NOTE: Replace with your deployed Program ID
-const PROGRAM_ID = new PublicKey("FqtrHgdYTph1DSP9jDYD7xrKPrjSjCTtnw6fyKMmboYk");
-const NETWORK = process.env.NETWORK || 'Localnet';
-const RPC_ENDPOINT = NETWORK === 'Localnet' ? 'http://127.0.0.1:8899' : 'https://api.devnet.solana.com';
-const connection = new Connection(RPC_ENDPOINT, 'confirmed');
+validateEnvOrExit();
 
-const IDL_PATH = path.resolve(__dirname, "../../target/idl/orin_identity.json");
-const idl = JSON.parse(fs.readFileSync(IDL_PATH, "utf8")) as Idl;
+const env = getEnv();
+const connection = new Connection(RPC_ENDPOINT, "confirmed");
+const agent = new OrinAgent();
+
+const idlPath = path.resolve(__dirname, PATHS.IDL_PATH);
+const audioPath = path.resolve(__dirname, PATHS.AUDIO_OUTPUT);
+const idl = JSON.parse(fs.readFileSync(idlPath, "utf8")) as Idl;
 const coder = new BorshCoder(idl);
 
-// ---------------------------------------------------------
-// 🚀 OFF-CHAIN PAYLOAD CACHE (The Web2.5 Hybrid Model)
-// Holds incoming sensitive JSON string until Solana anchor verifies it
-// ---------------------------------------------------------
-const offChainPayloadCache = new Map<string, any>();
+const mqttClient = mqtt.connect(env.MQTT_BROKER_URL);
+mqttClient.on("connect", () => logger.info("mqtt_connected"));
+mqttClient.on("error", (err) => logger.error({ err: err.message }, "mqtt_error"));
 
-const httpServer = http.createServer((req, res) => {
-    // Only accept POST requests on /api/preferences
-    if (req.method === 'POST' && req.url === '/api/preferences') {
-        let body = '';
-        req.on('data', chunk => body += chunk.toString());
-        req.on('end', () => {
-            try {
-                // Must ensure exact string trim matching during SHA256 processing to avoid mismatched hashes
-                const sanitizedBody = body.trim();
-                const hashBuffer = createHash("sha256").update(sanitizedBody).digest(); 
-                const hashHex = hashBuffer.toString('hex');
+function isAllZeroHash(hash: Buffer): boolean {
+  return hash.every((b) => b === 0);
+}
 
-                console.log(`[HTTP Server] 📦 Received Off-Chain JSON Payload.`);
-                console.log(`[HTTP Server] 🔐 Computed SHA256: ${hashHex}`);
+function readPreferencesHash(decodedAccount: any): Buffer {
+  const rawHash = decodedAccount?.preferencesHash ?? decodedAccount?.preferences_hash;
+  if (!rawHash) {
+    throw new Error("preferences_hash field not found in decoded GuestIdentity account.");
+  }
+  return Buffer.from(rawHash);
+}
 
-                offChainPayloadCache.set(hashHex, JSON.parse(sanitizedBody));
-                
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: "success", info: "Payload staged in Node.js. Awaiting Solana Hash Verification signal.", hash: hashHex }));
-            } catch (err) {
-                res.writeHead(400);
-                res.end(JSON.stringify({ error: "Invalid Payload or Hash mechanism." }));
-            }
+function buildGuestContext(decodedAccount: any): GuestContext {
+  return {
+    name: decodedAccount?.name ?? "Guest",
+    loyaltyPoints: Number(decodedAccount?.loyaltyPoints ?? decodedAccount?.loyalty_points ?? 0),
+    history: ["prefers comfort at night", "expects fast response"],
+  };
+}
+
+export function startSecureGatewayListener(): number {
+  logger.info(
+    { rpc_endpoint: RPC_ENDPOINT, program_id: PROGRAM_ID.toBase58() },
+    "secure_gateway_listener_start"
+  );
+
+  return connection.onProgramAccountChange(
+    PROGRAM_ID,
+    async (updated, context) => {
+      const requestLog = createRequestLogger();
+      const guestPda = updated.accountId.toBase58();
+
+      requestLog.info({ guest_pda: guestPda, slot: context.slot }, "account_mutation_detected");
+
+      try {
+        const decodedAccount = coder.accounts.decode(
+          ANCHOR_ACCOUNTS.GUEST_IDENTITY,
+          updated.accountInfo.data
+        ) as any;
+
+        const onChainHash = readPreferencesHash(decodedAccount);
+        const onChainHashHex = onChainHash.toString("hex");
+
+        if (isAllZeroHash(onChainHash)) {
+          requestLog.info("zero_hash_initialization_event_skip");
+          return;
+        }
+
+        const lastHash = await stateProvider.getLastProcessedHash(guestPda);
+        if (lastHash === onChainHashHex) {
+          requestLog.info({ hash: onChainHashHex }, "duplicate_hash_skip");
+          return;
+        }
+        await stateProvider.setLastProcessedHash(guestPda, onChainHashHex);
+
+        const pending = await stateProvider.getPendingCommand(guestPda);
+        if (!pending) {
+          requestLog.warn("no_pending_command_for_guest_skip");
+          return;
+        }
+
+        const guestContext = buildGuestContext(decodedAccount);
+        const { payload, hash: aiHash } = await agent.processCommand(
+          pending.userInput,
+          pending.guestContext ?? guestContext
+        );
+
+        if (!aiHash.equals(onChainHash)) {
+          requestLog.error(
+            {
+              on_chain_hash: onChainHashHex,
+              ai_hash: aiHash.toString("hex"),
+            },
+            "Posible ataque de Man-in-the-Middle o desincronía de estado"
+          );
+          return;
+        }
+
+        const mqttPayload = JSON.stringify({
+          lighting: payload.lighting,
+          temp: payload.temp,
+          services: payload.services,
         });
-    } else {
-        res.writeHead(404);
-        res.end();
-    }
-});
 
-httpServer.listen(3001, () => {
-    console.log(`\n[ORIN-Backend] 🌐 HTTP Payload Server listening for Web2 JSON on port 3001`);
-});
+        mqttClient.publish(IO_TOPICS.ROOM_CONTROL, mqttPayload, async (err?: Error) => {
+          if (err) {
+            requestLog.error({ err: err.message }, "mqtt_publish_error");
+            return;
+          }
 
-// ---------------------------------------------------------
-// 🚀 ON-CHAIN VERIFICATION LISTENER
-// ---------------------------------------------------------
-export function startSolanaListener() {
-    console.log(`[ORIN-Backend] 🚀 Starting Solana listener on ${RPC_ENDPOINT}`);
-    console.log(`[ORIN-Backend] 📡 Watching Program ID: ${PROGRAM_ID.toBase58()}\n`);
+          requestLog.info(
+            { topic: IO_TOPICS.ROOM_CONTROL, payload: mqttPayload },
+            "mqtt_publish_success"
+          );
 
-    connection.onProgramAccountChange(
-        PROGRAM_ID,
-        async (updatedAccountInfo, context) => {
-            console.log("\n---------------------------------------------------------");
-            console.log(`[ORIN-Backend] 🔔 On-chain Verification Hash Recorded at slot ${context.slot}!`);
-            const pubkey = updatedAccountInfo.accountId.toBase58();
-            
-            let onChainHashHex = "";
-            try {
-                const decoded: any = coder.accounts.decode("GuestIdentity", updatedAccountInfo.accountInfo.data);
-                
-                // Depending on the Anchor version, coder might return snake_case or camelCase directly from IDL definitions.
-                const hashRaw = decoded.preferencesHash || decoded.preferences_hash;
-                
-                if (hashRaw) {
-                    onChainHashHex = Buffer.from(hashRaw).toString('hex');
-                } else {
-                    console.error("[ORIN-Backend] ❌ Debug: Could not find hash field in decoded object. Keys found:", Object.keys(decoded));
-                }
-            } catch (err) {
-                console.error("[ORIN-Backend] ❌ Failed to decode GuestIdentity:", err);
-                return;
-            }
-            
-            console.log(`[ORIN-Backend] 👤 Guest PDA: ${pubkey}`);
+          await stateProvider.setValidatedState({
+            guestPda,
+            hashHex: onChainHashHex,
+            payload,
+            validatedAt: Date.now(),
+          });
+          await stateProvider.clearPendingCommand(guestPda);
+        });
 
-            // Skip initialization events (hash is zeroes)
-            if (onChainHashHex === "0000000000000000000000000000000000000000000000000000000000000000") {
-                console.log(`[ORIN-Backend] 🌱 Initialized account detected. Skipping environment sync.`);
-                console.log("---------------------------------------------------------");
-                return;
-            }
-
-            console.log(`[ORIN-Backend] 📜 On-Chain Hash: ${onChainHashHex}`);
-
-            const verifiedPayload = offChainPayloadCache.get(onChainHashHex);
-
-            if (!verifiedPayload) {
-                console.warn(`[ORIN-Backend] ⚠️ Hash mismatch or Private Payload missing! Cannot execute changes.`);
-                console.log("---------------------------------------------------------");
-                return;
-            }
-
-            console.log(`[ORIN-Backend] 🔐 HASH VERIFIED SUCCESSFULLY! Data is Authored & Untampered.`);
-            console.log(`[ORIN-Backend] ✨ Authorized Payload:`, verifiedPayload);
-
-            try {
-                if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-                    const dbRef = admin.database().ref(`/rooms/guest_${pubkey}`);
-                    await dbRef.update({
-                        has_arrived: true,
-                        preferences: verifiedPayload,
-                        last_updated: Date.now()
-                    });
-                    console.log(`[Firebase Sync] ✅ Triggered Real-time DB update for Frontend.`);
-                } else {
-                    console.log(`[Firebase Sync Mock] ⚠️ Bypassing real Firebase hit (No GCP credentials).`);
-                    console.log(`[Firebase Sync Mock] ✅ Simulated DB Update.`);
-                }
-
-                adjustRoomEnvironment(pubkey, verifiedPayload);
-                // Optionally garbage collect the memory cache here
-                offChainPayloadCache.delete(onChainHashHex);
-
-            } catch (error) {
-                console.error("[ORIN-Backend] ❌ Failed to execute system integration:", error);
-            }
-            console.log("---------------------------------------------------------");
-        },
-        'confirmed'
-    );
+        const audioBuffer = await agent.speak(payload.raw_response);
+        fs.writeFileSync(audioPath, audioBuffer);
+        requestLog.info({ path: audioPath }, "voice_feedback_written");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        requestLog.error({ err: message }, "secure_gateway_processing_error");
+      }
+    },
+    "confirmed"
+  );
 }
 
 if (require.main === module) {
-    startSolanaListener();
+  startSecureGatewayListener();
 }
+

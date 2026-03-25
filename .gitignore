@@ -1,4 +1,4 @@
-.anchor
+﻿.anchor
 .DS_Store
 target
 **/*.rs.bk
@@ -6,3 +6,22 @@ node_modules
 test-ledger
 .yarn
 path.md
+
+# Local env files
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Frontend build/cache
+frontend/.next
+frontend/out
+frontend/dist
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
