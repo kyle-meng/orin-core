@@ -22,6 +22,7 @@ export interface VoiceCommandResponse {
   status: "accepted";
   guestPda: string;
   message: string;
+  hash: string;
 }
 
 export interface ManualPreferencesRequest {
@@ -108,4 +109,30 @@ export async function checkApiHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Sends a raw audio blob to the backend for AI transcription
+ */
+export async function transcribeAudio(audioBlob: Blob): Promise<string> {
+  const formData = new FormData();
+  formData.append("audio", audioBlob, "recording.webm");
+
+  const response = await fetch(`${API_BASE}/api/v1/transcribe`, {
+    method: "POST",
+    headers: {
+      "X-API-KEY": API_KEY,
+    },
+    // Don't set Content-Type header manually when sending FormData,
+    // fetch will automatically set it to multipart/form-data
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Transcription API error (${response.status}): ${errorBody}`);
+  }
+
+  const data = await response.json();
+  return data.text;
 }

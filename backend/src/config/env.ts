@@ -12,6 +12,7 @@ const envSchema = z.object({
   GOOGLE_MODEL: z.string().min(1).default("gemini-1.5-flash"),
   DEEPGRAM_API_KEY: z.string().min(1),
   DEEPGRAM_TTS_MODEL: z.string().min(1).default("aura-2-thalia-en"),
+  DEEPGRAM_STT_MODEL: z.string().min(1).default("nova-2"),
   MQTT_BROKER_URL: z.string().min(1),
   MQTT_TOPIC: z.string().min(1),
   ENCRYPTION_SECRET: z.string().min(16),

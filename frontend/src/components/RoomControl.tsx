@@ -16,7 +16,7 @@ import {
   RoomPreferences,
   SavePreferencesResult,
 } from "@/lib/savePreferences";
-import type { GuestContext } from "@/lib/api";
+import { type GuestContext, transcribeAudio } from "@/lib/api";
 import idl from "@idl/orin_identity.json";
 
 type LightingMode = "warm" | "cold" | "ambient";
@@ -46,6 +46,8 @@ export default function RoomControl() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const [voiceInputText, setVoiceInputText] = useState("");
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
 
   const applyMode = useCallback((mode: RoomMode) => {
     const p = MODE_PRESETS[mode];
@@ -101,35 +103,67 @@ export default function RoomControl() {
       setSaveError(null);
       setSaveResult(null);
 
-      try {
-        const connection = getConnection();
-        const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
-        const program = new Program(idl as Idl, provider);
-        const { pda } = deriveGuestPda(guestEmail);
-        
-        // Use the current manual settings for the hash-lock fallback, or whatever the UI has
-        const preferences: RoomPreferences = {
-          temp: temperature,
-          lighting: lightingType,
-          services: [],
-          raw_response: "Voice command processed",
-        };
-        const guestContext: GuestContext = { name: guestEmail.split("@")[0], loyaltyPoints: 0, history: [] };
-
-        const command = voiceInputText.trim() || "Set room to relax mode";
-        const result = await saveVoicePreferences(program, pda, publicKey, command, preferences, guestContext);
-        setSaveResult(result);
-      } catch (err: any) {
-        setSaveError(err.message || "Voice AI failed.");
-      } finally {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+      } else {
         setIsProcessingVoice(false);
       }
     } else {
       // Start recording
-      setIsRecording(true);
-      setVoiceInputText("Set room to relax mode"); // Mocking transcription for MVP
+      setSaveError(null);
+      setSaveResult(null);
+      
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          try {
+            // STEP 1: Deepgram Transcribe via Backend Bypass
+            const transcribedText = await transcribeAudio(audioBlob);
+            setVoiceInputText(transcribedText);
+
+            // STEP 2: Initiate Blockchain + AI loop
+            const connection = getConnection();
+            const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
+            const program = new Program(idl as Idl, provider);
+            const { pda } = deriveGuestPda(guestEmail);
+        
+            const preferences: RoomPreferences = {
+              temp: temperature,
+              lighting: lightingType,
+              services: [],
+              raw_response: "Voice command processed",
+            };
+            const guestContext: GuestContext = { name: guestEmail.split("@")[0], loyaltyPoints: 0, history: [] };
+
+            const command = transcribedText.trim() || "Set room to relax mode";
+            const result = await saveVoicePreferences(program, pda, publicKey, command, preferences, guestContext);
+            setSaveResult(result);
+          } catch (err: any) {
+            setSaveError(err.message || "Voice AI transcription failed.");
+          } finally {
+            setIsProcessingVoice(false);
+          }
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+        setVoiceInputText("Listening... (Speak Now)"); 
+      } catch (err) {
+        setSaveError("Microphone permission denied or Web Audio API not available.");
+        setIsProcessingVoice(false);
+      }
     }
-  }, [anchorWallet, publicKey, guestEmail, temperature, lightingType, isRecording, voiceInputText]);
+  }, [anchorWallet, publicKey, guestEmail, temperature, lightingType, isRecording]);
 
   return (
     <div style={{ width: "100%", maxWidth: 640, margin: "0 auto" }}>

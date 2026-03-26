@@ -49,8 +49,12 @@ export async function saveVoicePreferences(
     guestContext,
   });
 
-  const hashBytes = await generateSha256Hash(preferences);
-  const hashHex = Array.from(hashBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  // Extract the true AI-resolved Hash hex from the backend response
+  const hashHex = apiResponse.hash;
+  if (!hashHex) throw new Error("Backend did not return an AI Hash.");
+
+  // Convert hex back to 32-byte Uint8Array for Anchor signing
+  const hashBytes = new Uint8Array(hashHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)));
 
   const txSignature = await updatePreferencesOnChain(program, guestPda, ownerPubkey, hashBytes);
 
@@ -69,13 +73,19 @@ export async function saveManualPreferences(
   preferences: RoomPreferences,
   guestContext: GuestContext
 ): Promise<SavePreferencesResult> {
-  const apiResponse = await stageManualPreferences({
+  // Build the EXACT body object that will be sent to the backend.
+  // The backend hashes request.body, so we must hash this SAME object locally
+  // to ensure canonical symmetry between the on-chain TX and the cached payload.
+  const canonicalBody = {
     guestPda: guestPda.toBase58(),
     preferences,
     guestContext,
-  });
+  };
 
-  const hashBytes = await generateSha256Hash(preferences);
+  const apiResponse = await stageManualPreferences(canonicalBody);
+
+  // Hash the same canonical body — not just preferences — to match the backend hash
+  const hashBytes = await generateSha256Hash(canonicalBody);
   const hashHex = Array.from(hashBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 
   const txSignature = await updatePreferencesOnChain(program, guestPda, ownerPubkey, hashBytes);
