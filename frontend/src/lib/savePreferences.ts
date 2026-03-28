@@ -14,8 +14,26 @@
 import { Program } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import { generateSha256Hash } from "./hash";
-import { stageVoiceCommand, stageManualPreferences, GuestContext } from "./api";
+import { stageVoiceCommand, stageManualPreferences, GuestContext, relayTransaction } from "./api";
 import { updatePreferencesOnChain } from "./solana";
+
+/**
+ * Lazily resolves the relay opts at call-time (not at module-init).
+ * This avoids Next.js SSR timing issues where NEXT_PUBLIC_ env vars
+ * are not yet embedded when the module is first evaluated.
+ */
+export function getRelayOpts() {
+  const pubkeyStr = process.env.NEXT_PUBLIC_FEE_PAYER_PUBKEY;
+  if (!pubkeyStr) {
+    console.warn("[ORIN] NEXT_PUBLIC_FEE_PAYER_PUBKEY not set — falling back to direct-pay mode.");
+    return undefined;
+  }
+  console.debug(`[ORIN] Gas Relay active — fee payer: ${pubkeyStr}`);
+  return {
+    feePayerPubkey: new PublicKey(pubkeyStr),
+    relayFn: relayTransaction,
+  };
+}
 
 export interface RoomPreferences {
   temp: number;
@@ -56,7 +74,10 @@ export async function saveVoicePreferences(
   // Convert hex back to 32-byte Uint8Array for Anchor signing
   const hashBytes = new Uint8Array(hashHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)));
 
-  const txSignature = await updatePreferencesOnChain(program, guestPda, ownerPubkey, hashBytes);
+  const txSignature = await updatePreferencesOnChain(
+    program, guestPda, ownerPubkey, hashBytes,
+    getRelayOpts()   // ← Gas Relay: server co-signs + broadcasts, guest pays nothing
+  );
 
   return { apiAccepted: apiResponse.status === "accepted", hashHex, solanaTxSignature: txSignature };
 }
@@ -88,7 +109,10 @@ export async function saveManualPreferences(
   const hashBytes = await generateSha256Hash(canonicalBody);
   const hashHex = Array.from(hashBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 
-  const txSignature = await updatePreferencesOnChain(program, guestPda, ownerPubkey, hashBytes);
+  const txSignature = await updatePreferencesOnChain(
+    program, guestPda, ownerPubkey, hashBytes,
+    getRelayOpts()   // ← Gas Relay: server co-signs + broadcasts, guest pays nothing
+  );
 
   return { apiAccepted: apiResponse.status === "accepted", hashHex, solanaTxSignature: txSignature };
 }

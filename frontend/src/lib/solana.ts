@@ -63,24 +63,59 @@ export function getProgram(provider: AnchorProvider, idl: Idl): Program {
  * @param guestPda - The guest's PDA (derived from their email)
  * @param ownerPubkey - The connected wallet's public key (must be the PDA owner)
  * @param preferencesHash - 32-byte SHA-256 hash as Uint8Array
+ * @param opts.feePayerPubkey - If provided, uses Gas Relay mode: the guest
+ *   partial-signs and the backend fee-payer co-signs + broadcasts. Guest pays zero gas.
+ * @param opts.relayFn - The `relayTransaction` function from api.ts, injected
+ *   to avoid circular imports and enable testing.
  * @returns Transaction signature string
  */
 export async function updatePreferencesOnChain(
   program: Program,
   guestPda: PublicKey,
   ownerPubkey: PublicKey,
-  preferencesHash: Uint8Array
+  preferencesHash: Uint8Array,
+  opts?: {
+    feePayerPubkey?: PublicKey;
+    relayFn?: (serializedTx: string) => Promise<{ signature: string }>;
+  }
 ): Promise<string> {
-  const tx = await (program.methods as any)
-    .updatePreferences(Array.from(preferencesHash))
-    .accounts({
-      guestProfile: guestPda,
-      owner: ownerPubkey,
-    } as any)
-    .rpc();
+  const useRelay = !!(opts?.feePayerPubkey && opts?.relayFn);
 
-  return tx;
+  if (!useRelay) {
+    // ── Direct-pay mode (guest pays gas themselves) ──────────────
+    const tx = await (program.methods as any)
+      .updatePreferences(Array.from(preferencesHash))
+      .accounts({ guestProfile: guestPda, owner: ownerPubkey } as any)
+      .rpc();
+    return tx;
+  }
+
+  // ── Gas Relay mode (ORIN pays gas on behalf of the guest) ────
+  const connection = program.provider.connection;
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+  const instruction = await (program.methods as any)
+    .updatePreferences(Array.from(preferencesHash))
+    .accounts({ guestProfile: guestPda, owner: ownerPubkey } as any)
+    .instruction();
+
+  const tx = new (await import("@solana/web3.js")).Transaction({
+    recentBlockhash: blockhash,
+    feePayer: opts!.feePayerPubkey,  // server is the fee payer
+  });
+  tx.add(instruction);
+
+  // Guest wallet partial-signs — authorizes the instruction; fee-payer sig is missing
+  const signedTx = await (program.provider as any).wallet.signTransaction(tx);
+
+  // Serialize without requiring all sigs (fee-payer sig will be added by server)
+  const serialized = signedTx.serialize({ requireAllSignatures: false }).toString("base64");
+
+  // Server co-signs + broadcasts, returns tx signature
+  const relayResult = await opts!.relayFn!(serialized);
+  return relayResult.signature;
 }
+
 
 /**
  * Initializes a new guest identity PDA on-chain.
@@ -93,23 +128,67 @@ export async function updatePreferencesOnChain(
  * @param name - Guest's display name (max 100 chars)
  * @returns Transaction signature string
  */
+/**
+ * @param opts.feePayerPubkey - If provided, Gas Relay mode: guest partial-signs,
+ *   server co-signs + broadcasts. Guest pays ZERO gas.
+ * @param opts.relayFn - Injected relayTransaction function from api.ts.
+ */
 export async function initializeGuestOnChain(
   program: Program,
   guestPda: PublicKey,
   userPubkey: PublicKey,
   emailHash: Uint8Array,
-  name: string
+  name: string,
+  opts?: {
+    feePayerPubkey?: PublicKey;
+    relayFn?: (serializedTx: string) => Promise<{ signature: string }>;
+  }
 ): Promise<string> {
-  const tx = await (program.methods as any)
+  const useRelay = !!(opts?.feePayerPubkey && opts?.relayFn);
+
+  if (!useRelay) {
+    // ── Direct-pay mode: user pays both gas AND rent ──────────────
+    const tx = await (program.methods as any)
+      .initializeGuest(Array.from(emailHash), name)
+      .accounts({
+        guestProfile: guestPda,
+        user: userPubkey,
+        feePayer: userPubkey,      // same wallet covers rent in direct mode
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+    return tx;
+  }
+
+  // ── Gas Relay mode ───────────────────────────────────────────
+  const connection = program.provider.connection;
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+
+  const instruction = await (program.methods as any)
     .initializeGuest(Array.from(emailHash), name)
     .accounts({
       guestProfile: guestPda,
       user: userPubkey,
+      feePayer: opts!.feePayerPubkey, // server wallet covers rent
       systemProgram: SystemProgram.programId,
     } as any)
-    .rpc();
+    .instruction();
 
-  return tx;
+  const { Transaction } = await import("@solana/web3.js");
+  const tx = new Transaction({
+    recentBlockhash: blockhash,
+    feePayer: opts!.feePayerPubkey,  // server subsidizes the gas
+  });
+  tx.add(instruction);
+
+  // Guest wallet partial-signs — authorizes the instruction only
+  const signedTx = await (program.provider as any).wallet.signTransaction(tx);
+
+  // Serialize without requiring fee-payer signature (server will add it)
+  const serialized = signedTx.serialize({ requireAllSignatures: false }).toString("base64");
+
+  const relayResult = await opts!.relayFn!(serialized);
+  return relayResult.signature;
 }
 
 /**

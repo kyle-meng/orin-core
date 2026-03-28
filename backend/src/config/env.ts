@@ -8,6 +8,7 @@ const envSchema = z.object({
   NETWORK: z.enum(["devnet", "mainnet"]).default("devnet"),
   RPC_ENDPOINT: z.string().min(1),
   PROGRAM_ID: z.string().min(1),
+  FEE_PAYER_PRIVATE_KEY: z.string().min(87, "Must be a base58-encoded 64-byte Solana keypair"),
   GOOGLE_API_KEY: z.string().min(1),
   GOOGLE_MODEL: z.string().min(1).default("gemini-1.5-flash"),
   DEEPGRAM_API_KEY: z.string().min(1),

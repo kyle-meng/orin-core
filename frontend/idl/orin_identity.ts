@@ -55,6 +55,10 @@ export type OrinIdentity = {
         },
         {
           "name": "user",
+          "signer": true
+        },
+        {
+          "name": "feePayer",
           "writable": true,
           "signer": true
         },
@@ -76,6 +80,48 @@ export type OrinIdentity = {
         {
           "name": "name",
           "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "recordBooking",
+      "docs": [
+        "Records a completed booking and rewards the guest with ORIN Credits.",
+        "",
+        "Access control: only the ORIN backend authority wallet (the designated",
+        "`booking_authority` signer) may call this instruction. This prevents guests",
+        "from self-awarding credits and ensures all bookings are validated server-side",
+        "before being committed on-chain.",
+        "",
+        "@param points_earned: Number of ORIN Credits to add (u64, checked arithmetic)"
+      ],
+      "discriminator": [
+        30,
+        238,
+        92,
+        20,
+        218,
+        26,
+        2,
+        179
+      ],
+      "accounts": [
+        {
+          "name": "guestProfile",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "guestProfile"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "pointsEarned",
+          "type": "u64"
         }
       ]
     },
@@ -146,6 +192,16 @@ export type OrinIdentity = {
       "code": 6001,
       "name": "unauthorizedAccess",
       "msg": "Identity verification failed: Only the owner of this account can modify its data."
+    },
+    {
+      "code": 6002,
+      "name": "unauthorizedBooking",
+      "msg": "Booking authority mismatch: Only the ORIN backend server wallet may record bookings."
+    },
+    {
+      "code": 6003,
+      "name": "pointsOverflow",
+      "msg": "Arithmetic overflow: loyalty_points or stay_count has reached its maximum value."
     }
   ],
   "types": [
@@ -161,6 +217,10 @@ export type OrinIdentity = {
         "fields": [
           {
             "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
             "type": "pubkey"
           },
           {

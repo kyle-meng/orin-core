@@ -136,3 +136,41 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
   const data = await response.json();
   return data.text;
 }
+
+export interface RelayResponse {
+  status: "success";
+  signature: string;
+  feePayerPubkey: string;
+  message: string;
+}
+
+/**
+ * Gas Relay: submits a partially-signed, base64-serialized Transaction
+ * to the backend fee-payer, which co-signs and broadcasts it to Solana.
+ * The guest pays ZERO on-chain fees.
+ *
+ * Usage:
+ *   1. Build the transaction with feePayer = server's public key.
+ *   2. Guest wallet partial-signs (authorizes the instruction).
+ *   3. Serialize with requireAllSignatures: false and base64-encode.
+ *   4. Call this function — the server adds the fee-payer signature.
+ *
+ * @param serializedTx - base64-encoded partially-signed Transaction bytes
+ */
+export async function relayTransaction(serializedTx: string): Promise<RelayResponse> {
+  const response = await fetch(`${API_BASE}/api/v1/relay`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-KEY": API_KEY,
+    },
+    body: JSON.stringify({ transaction: serializedTx }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Relay API error (${response.status}): ${errorBody}`);
+  }
+
+  return response.json();
+}

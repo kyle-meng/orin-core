@@ -21,11 +21,12 @@ pub mod orin_identity {
         let guest_profile = &mut ctx.accounts.guest_profile;
 
         // 2. Initialize fields
-        guest_profile.owner = *ctx.accounts.user.key;    // Bind the current signer as the owner
+        guest_profile.owner     = *ctx.accounts.user.key;      // Bind the guest wallet as the owner
+        guest_profile.authority = *ctx.accounts.fee_payer.key; // Bind the server wallet as the booking authority
         guest_profile.email_hash = email_hash;           // Store email hash for off-chain querying
         guest_profile.name = name;                       // Store guest name
-        guest_profile.loyalty_points = 0;                // Initialize points to 0
-        guest_profile.stay_count = 0;                    // Initialize stay count to 0
+        guest_profile.loyalty_points = 0;                // Initialize ORIN Credits to 0
+        guest_profile.stay_count = 0;                    // Initialize booking count to 0
         guest_profile.preferences_hash = [0; 32];        // Wait for off-chain payload hash
 
         msg!("Guest Identity Initialized: {}", guest_profile.name);
@@ -46,6 +47,39 @@ pub mod orin_identity {
         msg!("Preferences HASH updated for Guest: {:?}", guest_profile.preferences_hash);
         Ok(())
     }
+
+    /// Records a completed booking and rewards the guest with ORIN Credits.
+    ///
+    /// Access control: only the ORIN backend authority wallet (the designated
+    /// `booking_authority` signer) may call this instruction. This prevents guests
+    /// from self-awarding credits and ensures all bookings are validated server-side
+    /// before being committed on-chain.
+    ///
+    /// @param points_earned: Number of ORIN Credits to add (u64, checked arithmetic)
+    pub fn record_booking(ctx: Context<RecordBooking>, points_earned: u64) -> Result<()> {
+        let guest_profile = &mut ctx.accounts.guest_profile;
+
+        // Checked addition guards against u64 overflow (production safety)
+        guest_profile.loyalty_points = guest_profile
+            .loyalty_points
+            .checked_add(points_earned)
+            .ok_or(OrinError::PointsOverflow)?;
+
+        // Checked addition guards against u32 overflow on stay counter
+        guest_profile.stay_count = guest_profile
+            .stay_count
+            .checked_add(1)
+            .ok_or(OrinError::PointsOverflow)?;
+
+        msg!(
+            "Booking recorded for guest '{}'. Stay #{}, ORIN Credits earned: {}, Total credits: {}",
+            guest_profile.name,
+            guest_profile.stay_count,
+            points_earned,
+            guest_profile.loyalty_points
+        );
+        Ok(())
+    }
 }
 
 /// ---------------------------
@@ -59,16 +93,19 @@ pub struct InitializeGuest<'info> {
     // Seeds combine "guest" + user's email hash, ensuring one email maps to exactly one identity account
     #[account(
         init,
-        payer = user,
-        // Space calculation: 8 (discriminator) + 32 (pubkey) + 32 (hash) + 4+100 (name) + 32 (prefs_hash) + 8 (u64) + 4 (u32)
-        space = 8 + 32 + 32 + (4 + 100) + 32 + 8 + 4,
+        payer = fee_payer,  // Server wallet subsidizes the Rent (~0.0024 SOL) — guest pays nothing
+        // Space: 8 discriminator + 32 owner + 32 authority + 32 email_hash + (4+100) name
+        //      + 32 preferences_hash + 8 loyalty_points + 4 stay_count = 252 bytes
+        space = 8 + 32 + 32 + 32 + (4 + 100) + 32 + 8 + 4,
         seeds = [b"guest", email_hash.as_ref()],
         bump
     )]
     pub guest_profile: Account<'info, GuestIdentity>,
 
+    pub user: Signer<'info>,  // Guest wallet: signs to prove ownership (no SOL required)
+
     #[account(mut)]
-    pub user: Signer<'info>, // The wallet paying for account creation (could be the app's feepayer in AA)
+    pub fee_payer: Signer<'info>,  // ORIN server wallet: funds account creation rent
 
     pub system_program: Program<'info, System>,
 }
@@ -87,6 +124,29 @@ pub struct UpdatePreferences<'info> {
     pub owner: Signer<'info>, // Must be the signature of the account owner
 }
 
+/// Context for the record_booking instruction.
+///
+/// Access control design:
+///   - `guest_profile` is mutable (loyalty_points and stay_count are written).
+///   - `booking_authority` is a Signer whose public key must match the
+///     `authority` field stored in the account at initialization.
+///     This binds the ORIN backend server wallet as the sole entity
+///     permitted to issue credits — guests cannot self-award points.
+#[derive(Accounts)]
+pub struct RecordBooking<'info> {
+    #[account(
+        mut,
+        // Enforce that only the stored authority can call this instruction.
+        // `has_one` checks: guest_profile.authority == booking_authority.key()
+        has_one = authority @ OrinError::UnauthorizedBooking
+    )]
+    pub guest_profile: Account<'info, GuestIdentity>,
+
+    // The ORIN backend server wallet — must sign every record_booking call.
+    // This is the same fee_payer wallet used throughout the relay system.
+    pub authority: Signer<'info>,
+}
+
 /// ---------------------------
 /// Data Structures (State)
 /// ---------------------------
@@ -94,11 +154,12 @@ pub struct UpdatePreferences<'info> {
 #[account]
 pub struct GuestIdentity {
     pub owner: Pubkey,               // 32 bytes: Account owner (AA context or private key wallet)
+    pub authority: Pubkey,           // 32 bytes: ORIN backend server wallet — the only key that may call record_booking
     pub email_hash: [u8; 32],        // 32 bytes: Associated email hash
     pub name: String,                // 4 + 100 bytes: User's name/nickname
     pub preferences_hash: [u8; 32],  // 32 bytes: Security HASH validating the off-chain environment preferences
-    pub loyalty_points: u64,         // 8 bytes: Loyalty points (for future Phase extensions)
-    pub stay_count: u32,             // 4 bytes: Number of stays/activations
+    pub loyalty_points: u64,         // 8 bytes: ORIN Credits (mapped from loyalty_points for display)
+    pub stay_count: u32,             // 4 bytes: Total completed bookings (canonical count; details stored off-chain)
 }
 
 /// ---------------------------
@@ -111,4 +172,8 @@ pub enum OrinError {
     NameTooLong,
     #[msg("Identity verification failed: Only the owner of this account can modify its data.")]
     UnauthorizedAccess,
+    #[msg("Booking authority mismatch: Only the ORIN backend server wallet may record bookings.")]
+    UnauthorizedBooking,
+    #[msg("Arithmetic overflow: loyalty_points or stay_count has reached its maximum value.")]
+    PointsOverflow,
 }

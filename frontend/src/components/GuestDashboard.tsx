@@ -5,7 +5,9 @@ import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { Program, AnchorProvider, Idl } from "@coral-xyz/anchor";
 import { deriveGuestPda } from "@/lib/pda";
 import { getConnection, fetchGuestProfile, initializeGuestOnChain } from "@/lib/solana";
+import { getRelayOpts } from "@/lib/savePreferences";
 import idl from "@idl/orin_identity.json";
+
 
 interface GuestDashboardProps {
   onEnterRoom: () => void;
@@ -78,7 +80,9 @@ export default function GuestDashboard({ onEnterRoom }: GuestDashboardProps) {
         pda,
         publicKey,
         emailHash,
-        guestEmail.split("@")[0]
+        guestEmail.split("@")[0],
+        getRelayOpts()
+
       );
       
       const data = await fetchGuestProfile(program, pda);

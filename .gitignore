@@ -26,3 +26,5 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.mp3
+git_commit.txt
+fee-payer.json

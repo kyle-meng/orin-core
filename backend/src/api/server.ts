@@ -2,12 +2,15 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { createClient } from "@deepgram/sdk";
+import { Connection } from "@solana/web3.js";
 import { validateEnvOrExit } from "../config/validate_env";
 import { getEnv } from "../config/env";
 import { stateProvider } from "../state";
 import { createRequestLogger, logger } from "../shared/logger";
 import { GuestContext, OrinAgent } from "../ai_agent";
 import { generateSha256Hash } from "../shared/hash";
+import { getFeePayerKeypair, relayTransaction } from "../shared/feePayer";
+import { RPC_ENDPOINT } from "../shared/constants";
 
 /**
  * ORIN Production API Gateway
@@ -19,6 +22,13 @@ import { generateSha256Hash } from "../shared/hash";
 
 validateEnvOrExit();
 const env = getEnv();
+
+// Eagerly validate + load the fee-payer keypair at startup.
+// Fails fast if FEE_PAYER_PRIVATE_KEY is misconfigured rather than at relay time.
+getFeePayerKeypair();
+
+// Shared RPC connection used by the relay endpoint
+const rpcConnection = new Connection(RPC_ENDPOINT, "confirmed");
 
 type VoiceCommandBody = {
   guestPda: string;
@@ -178,6 +188,62 @@ app.post("/api/v1/transcribe", async (request, reply) => {
     reqLogger.error({ error: error.message }, "transcription_endpoint_error");
     return reply.status(500).send({
       error: "Internal server error during transcription.",
+      details: error.message,
+    });
+  }
+});
+
+/**
+ * GAS RELAY ENDPOINT (FeePayer / Account Abstraction)
+ * -------------------------------------------------------------
+ * Accepts a base64-encoded, PARTIALLY-SIGNED Solana transaction
+ * from the frontend. The guest wallet has already signed the
+ * instruction-authorizing signature. This endpoint adds the
+ * server's fee-payer co-signature so the guest pays zero gas.
+ *
+ * Security model:
+ *   - X-API-KEY auth required (same as all other routes).
+ *   - The Anchor program's `has_one = owner` constraint ensures
+ *     the server's fee-payer key cannot forge guest instructions.
+ *   - We validate feePayer matches our server key before signing.
+ *   - recentBlockhash presence is enforced to block replay attacks.
+ */
+app.post<{ Body: { transaction: string } }>("/api/v1/relay", async (request, reply) => {
+  const reqLogger = createRequestLogger(request.headers["x-request-id"] as string | undefined);
+
+  // Auth guard
+  const apiKey = request.headers["x-api-key"];
+  if (apiKey !== env.API_KEY) {
+    reqLogger.warn({ origin: request.headers.origin }, "unauthorized_relay_access");
+    return reply.status(401).send({ error: "Unauthorized. Valid X-API-KEY required." });
+  }
+
+  const { transaction } = request.body ?? {};
+
+  if (!transaction || typeof transaction !== "string") {
+    reqLogger.error("missing_transaction_payload");
+    return reply.status(400).send({
+      error: "Invalid body. Required: { transaction: string } (base64-encoded serialized Transaction)",
+    });
+  }
+
+  try {
+    reqLogger.info("relay_request_received");
+    const result = await relayTransaction(rpcConnection, transaction);
+    reqLogger.info(
+      { signature: result.signature, fee_payer: result.feePayerPubkey },
+      "relay_success"
+    );
+    return reply.status(200).send({
+      status: "success",
+      signature: result.signature,
+      feePayerPubkey: result.feePayerPubkey,
+      message: "Transaction co-signed and broadcast. Gas subsidized by ORIN.",
+    });
+  } catch (error: any) {
+    reqLogger.error({ error: error.message }, "relay_error");
+    return reply.status(500).send({
+      error: "Relay failed.",
       details: error.message,
     });
   }
