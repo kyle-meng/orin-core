@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import { getEnv } from "../config/env";
-import { IStateProvider, PendingCommand, ValidatedState } from "./IStateProvider";
+import { IStateProvider, PendingCommand, UserPreferences, ValidatedState } from "./IStateProvider";
 
 /**
  * Redis-backed state provider
@@ -9,6 +9,7 @@ import { IStateProvider, PendingCommand, ValidatedState } from "./IStateProvider
  * - last processed hashes (dedup/replay guard)
  * - staged commands from API
  * - validated state snapshots for short-term auditability
+ * - per-device user preferences
  */
 
 const env = getEnv();
@@ -55,20 +56,13 @@ export class RedisStateProvider implements IStateProvider {
     await this.redis.set(`orin:validated:${state.guestPda}`, JSON.stringify(state), "EX", 86400);
   }
 
-  async setDirectPayload(hashHex: string, payload: any): Promise<void> {
-    // Store exact frontend-computed JSON object. Short TTL because it should be processed soon.
-    await this.redis.set(`orin:direct_payload:${hashHex}`, JSON.stringify(payload), "EX", 3600);
+  async getUserPreferences(deviceId: string): Promise<UserPreferences | null> {
+    const raw = await this.redis.get(`orin:user_prefs:${deviceId}`);
+    return raw ? (JSON.parse(raw) as UserPreferences) : null;
   }
 
-  async getDirectPayload(hashHex: string): Promise<any | null> {
-    const raw = await this.redis.get(`orin:direct_payload:${hashHex}`);
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw);
-  }
-
-  async clearDirectPayload(hashHex: string): Promise<void> {
-    await this.redis.del(`orin:direct_payload:${hashHex}`);
+  async setUserPreferences(deviceId: string, prefs: UserPreferences): Promise<void> {
+    // 30-day TTL for device-specific personalization.
+    await this.redis.set(`orin:user_prefs:${deviceId}`, JSON.stringify(prefs), "EX", 30 * 24 * 3600);
   }
 }

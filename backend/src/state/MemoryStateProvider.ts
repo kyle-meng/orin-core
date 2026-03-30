@@ -1,4 +1,4 @@
-import { IStateProvider, PendingCommand, ValidatedState } from "./IStateProvider";
+import { IStateProvider, PendingCommand, UserPreferences, ValidatedState } from "./IStateProvider";
 
 /**
  * In-memory state provider
@@ -10,6 +10,7 @@ export class MemoryStateProvider implements IStateProvider {
   private readonly lastHash = new Map<string, string>();
   private readonly pending = new Map<string, PendingCommand>();
   private readonly validated = new Map<string, ValidatedState>();
+  private readonly prefs = new Map<string, UserPreferences>();
 
   async getLastProcessedHash(guestPda: string): Promise<string | null> {
     return this.lastHash.get(guestPda) ?? null;
@@ -35,23 +36,11 @@ export class MemoryStateProvider implements IStateProvider {
     this.validated.set(state.guestPda, state);
   }
 
-  // -------------------------------------------------------------
-  // Web2.5 Bypassing Logic (High-Speed Channel)
-  // For UI explicit commands, we store the pre-verified JSON to
-  // omit language model halllucination risks + latency.
-  // -------------------------------------------------------------
-  private readonly directPayloads = new Map<string, any>();
-
-  async setDirectPayload(hashHex: string, payload: any): Promise<void> {
-    this.directPayloads.set(hashHex, payload);
+  async getUserPreferences(deviceId: string): Promise<UserPreferences | null> {
+    return this.prefs.get(deviceId) ?? null;
   }
 
-  async getDirectPayload(hashHex: string): Promise<any | null> {
-    return this.directPayloads.get(hashHex) ?? null;
-  }
-
-  async clearDirectPayload(hashHex: string): Promise<void> {
-    this.directPayloads.delete(hashHex);
+  async setUserPreferences(deviceId: string, prefs: UserPreferences): Promise<void> {
+    this.prefs.set(deviceId, prefs);
   }
 }
-

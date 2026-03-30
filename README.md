@@ -44,7 +44,7 @@ The "Brain" that bridges the physical IoT world with the Solana blockchain.
 **Status:** Ready for @federico to implement.
 
 The "Intent Translator" that turns guest natural language into on-chain states.
-- **Core Logic:** Gemini 1.5 Flash via LangChain + Deepgram Aura voice.
+- **Core Logic:** Groq (LLM) + Deepgram (voice).
 - **Function:** Mapping *"I'm feeling cold"* -> `Instruction: update_preferences(temp: 24.5)`.
 - **Task:** Define System Prompts and response schemas for the "ORIN Concierge".
 
@@ -83,38 +83,13 @@ Full documentation:
 
 Required backend environment variables:
 
-- `GOOGLE_API_KEY`
+- `GROQ_API_KEY`
 - `DEEPGRAM_API_KEY`
 
 Optional:
 
-- `GOOGLE_MODEL`
+- `GROQ_MODEL`
 - `DEEPGRAM_TTS_MODEL`
-
-## Update 2026-03 (Backend Refactor)
-
-This repository now includes a production-oriented backend architecture:
-
-- `backend/src/config/env.ts`: strict env parsing with `zod`
-- `backend/src/config/validate_env.ts`: fail-fast startup validation
-- `backend/src/shared/constants.ts`: centralized `PROGRAM_ID`, `RPC_ENDPOINT`, Anchor account names
-- `backend/src/shared/hash.ts`: shared canonical hashing (`stableStringify` + SHA-256)
-- `backend/src/shared/logger.ts`: structured logging (`pino`) with `request_id`
-- `backend/src/state/*`: persistence layer via `IStateProvider` + Redis implementation
-- `backend/src/api/server.ts`: production API route `POST /api/v1/voice-command`
-- `backend/src/listener.ts`: secure gateway (on-chain hash verification -> MQTT -> voice feedback)
-
-New orchestration script:
-
-```bash
-cd backend
-npm run dev:all
-```
-
-Required runtime variables are documented in:
-
-- `.env.example`
-- `backend/.env.example`
 
 ## Quick Start (Beginner Friendly)
 

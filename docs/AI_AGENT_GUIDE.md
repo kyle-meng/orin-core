@@ -1,4 +1,4 @@
-﻿# ORIN AI Agent Guide (LangChain + Gemini)
+﻿# ORIN AI Agent Guide (Groq + Deepgram)
 
 This document explains the backend AI agent implementation at:
 
@@ -20,8 +20,8 @@ The AI agent transforms natural-language guest requests into a strict JSON paylo
 
 `OrinAgent` handles:
 
-- LLM inference with Gemini 1.5 Flash (`@langchain/google-genai`)
-- Strict JSON parsing (`JsonOutputParser`)
+- LLM inference with Groq
+- Strict JSON parsing
 - Runtime schema validation
 - Deterministic SHA-256 generation for hash-lock
 - Voice synthesis output via Deepgram
@@ -89,21 +89,20 @@ Behavior:
 
 Required:
 
-- `GOOGLE_API_KEY`
-- `Deepgram_API_KEY`
+- `GROQ_API_KEY`
+- `DEEPGRAM_API_KEY`
 
 Optional:
 
-- `GOOGLE_MODEL` (default: `gemini-1.5-flash`)
-- `Deepgram_VOICE_ID` (default: `21m00Tcm4TlvDq8ikWAM`)
-- `Deepgram_MODEL_ID` (default: `eleven_multilingual_v2`)
+- `GROQ_MODEL` (default: `llama-3.1-8b-instant`)
+- `DEEPGRAM_TTS_MODEL` (default: `aura-2-orion-en`)
+
 
 ## 7. Dependencies
 
 Installed in `backend/package.json`:
 
 - `@langchain/core`
-- `@langchain/google-genai`
 
 ## 8. Minimal Usage Example
 

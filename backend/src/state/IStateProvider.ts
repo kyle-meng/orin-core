@@ -21,6 +21,12 @@ export interface ValidatedState {
   validatedAt: number;
 }
 
+export interface UserPreferences {
+  name: string;
+  loyaltyPoints: number;
+  history: string[];
+}
+
 export interface IStateProvider {
   // Hash deduplication and replay protection.
   getLastProcessedHash(guestPda: string): Promise<string | null>;
@@ -34,8 +40,7 @@ export interface IStateProvider {
   // Audit trail for validated hash-lock decisions.
   setValidatedState(state: ValidatedState): Promise<void>;
 
-  // Direct payload staging (Web2 JSON cache bypassing AI inference).
-  setDirectPayload(hashHex: string, payload: any): Promise<void>;
-  getDirectPayload(hashHex: string): Promise<any | null>;
-  clearDirectPayload(hashHex: string): Promise<void>;
+  // User/device preferences.
+  getUserPreferences(deviceId: string): Promise<UserPreferences | null>;
+  setUserPreferences(deviceId: string, prefs: UserPreferences): Promise<void>;
 }

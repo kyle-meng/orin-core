@@ -143,7 +143,7 @@ Feel free to ping the Backend team if you need any adjustments to the payload sh
 
 ---
 
-## 4. Update 2026-03: Production Integration Path
+## 4. Production Integration Path (Current)
 
 The integration now includes a production API gateway and persistent state:
 
@@ -195,11 +195,8 @@ Critical vars include:
 
 - `RPC_ENDPOINT`
 - `PROGRAM_ID`
-- `GOOGLE_API_KEY`
+- `GROQ_API_KEY`
 - `DEEPGRAM_API_KEY`
 - `MQTT_BROKER_URL`
 - `MQTT_TOPIC`
 - `REDIS_URL`
-- `ENCRYPTION_SECRET`
-
-
