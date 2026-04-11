@@ -3,14 +3,16 @@
 
 :root {
   --background: #332F2E;
-  --card: #3f3b3a;
-  --card-hover: #4a4645;
+  --card: #3C3837;
+  --card-hover: #454140;
   --accent: #C4A97A;
   --accent-light: #FFE0B2;
   --accent-muted: #80663C;
   --border: #4d4948;
   --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
+  --text-secondary: #d1d1d6;
+  --text-muted: #a1a1aa;
+  --input-bg: rgba(45, 41, 40, 0.5);
 }
 
 .light {
@@ -22,7 +24,9 @@
   --accent-muted: #7A5F33;
   --border: #e2deda;
   --text-primary: #332F2E;
-  --text-secondary: #71717a;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --input-bg: rgba(255, 255, 255, 0.8);
 }
 
 @theme {
@@ -35,13 +39,15 @@
   --color-border: var(--border);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-input-bg: var(--input-bg);
   --font-serif: "Outfit", sans-serif;
   --font-mono: "Inter", sans-serif;
 }
 
 @layer base {
   body {
-    @apply bg-background text-white font-serif antialiased;
+    @apply bg-background text-text-primary font-serif antialiased;
   }
 }
 

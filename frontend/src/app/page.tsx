@@ -105,10 +105,10 @@ const Logo = ({ className }: { className?: string }) => (
 const Card = ({ children, className, onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => (
   <motion.div
     onClick={onClick}
-    whileHover={onClick ? { scale: 1.02, backgroundColor: "#161616" } : {}}
-    whileTap={onClick ? { scale: 0.98 } : {}}
+    whileHover={onClick ? { scale: 1.01, backgroundColor: "var(--card-hover)" } : {}}
+    whileTap={onClick ? { scale: 0.99 } : {}}
     className={cn(
-      "bg-[#0f0f0f] border border-[#1f1f1f] rounded-2xl p-6 transition-all relative overflow-hidden",
+      "bg-card border border-border rounded-2xl p-6 transition-all relative overflow-hidden",
       onClick && "cursor-pointer",
       className
     )}
@@ -122,11 +122,11 @@ const StatusBadge = ({ active, label }: { active: boolean; label: string }) => (
     "flex items-center gap-2 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-[0.3em] backdrop-blur-sm",
     active
       ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-      : "bg-zinc-900/50 border border-zinc-800 text-zinc-500"
+      : "bg-card/50 border border-border text-text-muted"
   )}>
     <div className={cn(
       "w-1.5 h-1.5 rounded-full",
-      active ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-zinc-600"
+      active ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-text-muted/40"
     )} />
     {label}
   </div>
@@ -158,7 +158,7 @@ const LandingPage = ({ onConnect }: { onConnect: () => void }) => {
         <div className="space-y-3 md:space-y-4">
           <h1 className="text-5xl xs:text-6xl md:text-8xl font-light tracking-tighter font-serif leading-none">ORIN</h1>
           <p className="text-accent font-mono text-[9px] md:text-xs uppercase tracking-[0.4em] md:tracking-[0.5em]">Your Personal AI Concierge</p>
-          <p className="text-zinc-400 text-base md:text-xl font-light font-serif opacity-60 px-4">
+          <p className="text-text-secondary text-base md:text-xl font-light font-serif opacity-60 px-4">
             Every space knows your song.
           </p>
         </div>
@@ -169,7 +169,7 @@ const LandingPage = ({ onConnect }: { onConnect: () => void }) => {
           <div className="[&>button]:w-full [&>button]:justify-center [&>button]:h-12 md:[&>button]:h-14 [&>button]:rounded-xl md:[&>button]:rounded-2xl shadow-[0_0_30px_rgba(196,169,122,0.15)]">
             <WalletMultiButton />
           </div>
-          <p className="text-zinc-600 text-[10px] font-mono uppercase tracking-widest px-8">
+          <p className="text-text-muted text-[10px] font-mono uppercase tracking-widest px-8">
             Connect with Phantom or Coinbase
           </p>
         </div>
@@ -183,7 +183,7 @@ const LandingPage = ({ onConnect }: { onConnect: () => void }) => {
         ].map((item) => (
           <div key={item.label} className="flex flex-col items-center gap-2 md:gap-3 opacity-40">
             <item.icon className="w-[18px] h-[18px] md:w-5 md:h-5 text-accent" />
-            <span className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">{item.label}</span>
+            <span className="text-[9px] font-mono uppercase tracking-widest text-text-muted">{item.label}</span>
           </div>
         ))}
       </motion.div>
@@ -243,9 +243,9 @@ const OnboardingFlow = ({ onComplete, onBack }: { onComplete: (name: string) => 
       {/* Back Button */}
       <button
         onClick={handleBack}
-        className="absolute top-6 left-6 flex items-center gap-2 text-zinc-500 hover:text-accent transition-colors z-50 group"
+        className="absolute top-6 left-6 flex items-center gap-2 text-text-muted hover:text-accent transition-colors z-50 group"
       >
-        <div className="w-10 h-10 rounded-full bg-zinc-900/50 border border-zinc-800 flex items-center justify-center group-hover:border-accent/40 transition-all">
+        <div className="w-10 h-10 rounded-full bg-card/50 border border-border flex items-center justify-center group-hover:border-accent/40 transition-all">
           <ChevronLeft size={18} />
         </div>
         <span className="text-[10px] font-mono uppercase tracking-[0.2em] hidden xs:inline">Back</span>
@@ -267,7 +267,7 @@ const OnboardingFlow = ({ onComplete, onBack }: { onComplete: (name: string) => 
             </div>
             <div className="space-y-3 md:space-y-4 px-2">
               <h2 className="text-3xl md:text-4xl font-light font-serif leading-tight">{slides[step].title}</h2>
-              <p className="text-zinc-400 text-sm md:text-base leading-relaxed">{slides[step].desc}</p>
+              <p className="text-text-secondary text-sm md:text-base leading-relaxed">{slides[step].desc}</p>
               <p className="text-accent/50 font-mono text-[9px] md:text-[10px] uppercase tracking-widest">{slides[step].detail}</p>
             </div>
 
@@ -276,7 +276,7 @@ const OnboardingFlow = ({ onComplete, onBack }: { onComplete: (name: string) => 
               {slides.map((_, i) => (
                 <div key={i} className={cn(
                   "w-1.5 h-1.5 rounded-full transition-all",
-                  i === step ? "bg-accent w-5" : "bg-zinc-800"
+                  i === step ? "bg-accent w-5" : "bg-border/50"
                 )} />
               ))}
             </div>
@@ -298,13 +298,13 @@ const OnboardingFlow = ({ onComplete, onBack }: { onComplete: (name: string) => 
             <div className="text-center space-y-4">
               <Logo className="w-12 h-12 md:w-16 md:h-16 mx-auto" />
               <h2 className="text-3xl font-light font-serif leading-tight">Identity Registration</h2>
-              <p className="text-zinc-500 text-sm leading-relaxed px-4">
+              <p className="text-text-muted text-sm leading-relaxed px-4">
                 What should we call you? This name will be encrypted onto your Solana identity.
               </p>
             </div>
 
             <div className="space-y-3">
-              <label className="text-zinc-500 text-[9px] font-mono uppercase tracking-[0.2em] ml-1">Legal Name / Alias</label>
+              <label className="text-text-muted text-[9px] font-mono uppercase tracking-[0.2em] ml-1">Legal Name / Alias</label>
               <input
                 type="text"
                 value={name}
@@ -312,7 +312,7 @@ const OnboardingFlow = ({ onComplete, onBack }: { onComplete: (name: string) => 
                 onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onComplete(name.trim()); }}
                 placeholder="e.g. Satoshi"
                 autoFocus
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-4 px-4 text-base md:text-sm focus:outline-none focus:border-accent/50 transition-colors shadow-inner"
+                className="w-full bg-input-bg border border-border rounded-xl py-4 px-4 text-base md:text-sm focus:outline-none focus:border-accent/50 transition-colors shadow-inner"
               />
             </div>
 
@@ -323,7 +323,7 @@ const OnboardingFlow = ({ onComplete, onBack }: { onComplete: (name: string) => 
                 "w-full py-4.5 md:py-4 rounded-xl font-bold transition-all text-sm md:text-base",
                 name.trim()
                   ? "bg-accent text-black accent-glow shadow-[0_0_20px_rgba(196,169,122,0.2)]"
-                  : "bg-zinc-900 text-zinc-600 cursor-not-allowed"
+                  : "bg-card/50 text-text-muted/40 cursor-not-allowed border border-border/50"
               )}
             >
               Initialize Identity →
@@ -926,10 +926,10 @@ const Dashboard = ({
       animate="visible"
       className="flex flex-col h-[calc(100dvh-150px)] md:h-[calc(100vh-160px)]"
     >
-      <motion.div variants={itemVariants} className="flex items-center justify-between mb-2 pb-2 border-b border-zinc-900/30">
+      <motion.div variants={itemVariants} className="flex items-center justify-between mb-2 pb-2 border-b border-border/30">
         <div>
           <h2 className="text-lg md:text-xl font-light font-serif">ORIN Assistant</h2>
-          <p className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest">AI Concierge</p>
+          <p className="text-text-muted text-[10px] font-mono uppercase tracking-widest">AI Concierge</p>
         </div>
         <div className="flex items-center gap-2">
            <StatusBadge active={true} label={isRecording ? "Recording" : "Live"} />
@@ -947,10 +947,10 @@ const Dashboard = ({
             className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
           >
             <div className={cn(
-              "px-4 py-3 rounded-2xl max-w-[85%] shadow-lg",
+              "px-4 py-3 rounded-2xl max-w-[85%] shadow-sm",
               msg.role === "orin"
-                ? "bg-zinc-900 border border-zinc-800 text-zinc-100 rounded-tl-none font-light leading-relaxed"
-                : "bg-accent text-[#332F2E] font-medium rounded-tr-none"
+                ? "bg-card border border-border text-text-primary rounded-tl-none font-light leading-relaxed"
+                : "bg-accent text-[#332F2E] font-medium rounded-tr-none shadow-accent/10"
             )}>
               <p className="text-sm md:text-base">{msg.text}</p>
             </div>
@@ -958,7 +958,7 @@ const Dashboard = ({
         ))}
         {isProcessingVoice && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
-            <div className="flex gap-1.5 px-4 py-3 bg-zinc-900/50 rounded-2xl">
+            <div className="flex gap-1.5 px-4 py-3 bg-card border border-border/50 rounded-2xl">
               {[0, 1, 2].map(i => (
                 <motion.div
                   key={i}
@@ -974,8 +974,8 @@ const Dashboard = ({
       </div>
 
       {/* Input Area — Fixed at bottom of container */}
-      <motion.div variants={itemVariants} className="pt-3 border-t border-zinc-900 -mx-1">
-        <div className="flex items-center gap-2 bg-zinc-900/50 rounded-2xl p-1.5 border border-zinc-800 focus-within:border-accent/40 transition-all">
+      <motion.div variants={itemVariants} className="pt-3 border-t border-border -mx-1">
+        <div className="flex items-center gap-2 bg-input-bg rounded-2xl p-1.5 border border-border focus-within:border-accent/40 transition-all">
           <input
             type="text"
             placeholder="Tell ORIN..."
@@ -992,7 +992,7 @@ const Dashboard = ({
             onClick={isRecording ? stopRecording : startRecording}
             className={cn(
               "p-2.5 rounded-xl transition-all",
-              isRecording ? "bg-red-500 text-white animate-pulse" : "text-zinc-500 hover:text-accent hover:bg-accent/10"
+              isRecording ? "bg-red-500 text-white animate-pulse" : "text-text-muted hover:text-accent hover:bg-accent/10"
             )}
           >
             {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
@@ -1019,12 +1019,12 @@ const Dashboard = ({
     >
       <motion.div variants={itemVariants}>
         <h2 className="text-xl md:text-2xl font-light font-serif">Room Control</h2>
-        <p className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest">Manual environment adjustments</p>
+        <p className="text-text-muted text-[10px] font-mono uppercase tracking-widest">Manual environment adjustments</p>
       </motion.div>
 
       {/* Scene Presets */}
       <motion.div variants={itemVariants}>
-        <p className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-3">Scene Presets</p>
+        <p className="text-text-muted text-[10px] font-mono uppercase tracking-widest mb-3">Scene Presets</p>
         <div className="grid grid-cols-3 gap-2 md:gap-4">
           {[
             { name: "Relax", icon: Moon, temp: 23, bright: 40, light: "warm" as const },
@@ -1040,11 +1040,11 @@ const Dashboard = ({
               }}
               className={cn(
                 "flex flex-col items-center gap-2 md:gap-3 p-3 md:p-5 transition-all cursor-pointer",
-                lightingMode === scene.light ? "border-accent bg-accent/10 shadow-[0_0_15px_rgba(196,169,122,0.1)]" : "hover:bg-zinc-900/50"
+                lightingMode === scene.light ? "border-accent bg-accent/10 shadow-[0_0_15px_rgba(196,169,122,0.1)]" : "bg-card border-border hover:bg-card-hover"
               )}
             >
-              <scene.icon size={20} className={lightingMode === scene.light ? "text-accent" : "text-zinc-500"} />
-              <span className={cn("font-bold text-[10px] md:text-xs uppercase tracking-widest", lightingMode === scene.light ? "text-accent" : "text-zinc-400")}>
+              <scene.icon size={20} className={lightingMode === scene.light ? "text-accent" : "text-text-muted"} />
+              <span className={cn("font-bold text-[10px] md:text-xs uppercase tracking-widest", lightingMode === scene.light ? "text-accent" : "text-text-secondary")}>
                 {scene.name}
               </span>
             </Card>
@@ -1068,12 +1068,12 @@ const Dashboard = ({
               <input
                 type="range" min={16} max={30} step={0.5} value={target_temp_c}
                 onChange={(e) => setTargetTempC(parseFloat(e.target.value))}
-                className="w-full accent-accent h-2 rounded-lg cursor-pointer bg-zinc-800 appearance-none"
+                className="w-full accent-accent h-2 rounded-lg cursor-pointer bg-border appearance-none"
               />
             </div>
           </div>
 
-          <div className="h-px bg-zinc-900/50 mx-2" />
+          <div className="h-px bg-border/20 mx-2" />
 
           {/* Brightness Control */}
           <div className="space-y-4">
@@ -1088,7 +1088,7 @@ const Dashboard = ({
               <input
                 type="range" min={0} max={100} step={1} value={brightness}
                 onChange={(e) => setBrightness(parseInt(e.target.value))}
-                className="w-full accent-accent h-2 rounded-lg cursor-pointer bg-zinc-800 appearance-none"
+                className="w-full accent-accent h-2 rounded-lg cursor-pointer bg-border appearance-none"
               />
             </div>
           </div>
@@ -1107,12 +1107,12 @@ const Dashboard = ({
               onClick={() => setMusicOn(!musicOn)}
               className={cn(
                 "w-12 h-6 rounded-full relative transition-all duration-500",
-                musicOn ? "bg-accent" : "bg-zinc-800"
+                musicOn ? "bg-accent" : "bg-card-hover border border-border"
               )}
             >
               <motion.div
                 animate={{ x: musicOn ? 24 : 2 }}
-                className="absolute top-1 w-4 h-4 rounded-full bg-black"
+                className="absolute top-1 w-4 h-4 rounded-full bg-background"
               />
             </button>
           </div>
@@ -1121,7 +1121,7 @@ const Dashboard = ({
               <Volume2 size={18} className="text-accent" />
               <div className="flex-1">
                 <p className="font-bold text-sm truncate">{musicTrack}</p>
-                <p className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest">Lo-fi Ambient</p>
+                <p className="text-text-muted text-[10px] font-mono uppercase tracking-widest">Lo-fi Ambient</p>
               </div>
             </div>
           )}
@@ -1134,10 +1134,10 @@ const Dashboard = ({
           onClick={handleSaveSetup}
           disabled={isSaving}
           className={cn(
-            "w-full py-4 rounded-xl font-bold transition-all text-sm relative overflow-hidden group",
+            "w-full py-4 rounded-xl font-bold transition-all text-sm relative overflow-hidden group border",
             isSaving
-              ? "bg-zinc-900 text-zinc-600 cursor-not-allowed"
-              : "bg-accent text-black accent-glow hover:scale-[1.02] active:scale-[0.98]"
+              ? "bg-card/50 text-text-muted/50 cursor-not-allowed border-border"
+              : "bg-accent text-black accent-glow hover:scale-[1.02] active:scale-[0.98] border-accent"
           )}
         >
           {isSaving ? "Syncing to Solana..." : "Save my setup →"}
@@ -1160,7 +1160,7 @@ const Dashboard = ({
       className="space-y-6"
     >
       <motion.div variants={itemVariants}>
-        <Card className="bg-zinc-900/50 border-zinc-800 p-8 flex flex-col items-center space-y-4">
+        <Card className="bg-card/50 border-border p-8 flex flex-col items-center space-y-4">
           <div className="relative group">
             <div className="w-24 h-24 rounded-full bg-accent/10 border-2 border-accent/20 flex items-center justify-center text-accent text-4xl font-bold overflow-hidden">
               {profileImage ? (
@@ -1176,10 +1176,10 @@ const Dashboard = ({
           </div>
           <div className="text-center space-y-1">
             <h3 className="text-2xl font-bold">{guestName}</h3>
-            <p className="text-zinc-500 text-xs font-mono">{walletAddress.slice(0, 8)}...{walletAddress.slice(-8)}</p>
+            <p className="text-text-muted text-xs font-mono">{walletAddress.slice(0, 8)}...{walletAddress.slice(-8)}</p>
           </div>
           {isProfileLoading ? (
-            <div className="flex items-center gap-2 bg-zinc-900 text-zinc-500 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest border border-zinc-800 animate-pulse">
+            <div className="flex items-center gap-2 bg-card/80 text-text-muted text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest border border-border animate-pulse">
               <Activity size={12} className="animate-spin" /> Syncing with Solana...
             </div>
           ) : profileData ? (
@@ -1190,12 +1190,12 @@ const Dashboard = ({
             <button
               onClick={handleInitializeIdentity}
               disabled={isSaving}
-              className="flex items-center gap-2 bg-zinc-800 text-zinc-400 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest border border-zinc-700 hover:bg-zinc-700 transition-colors"
+              className="flex items-center gap-2 bg-card border border-border text-text-muted text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest hover:bg-card-hover transition-colors"
             >
               <Shield size={12} /> {isSaving ? "Initializing..." : "Create On-Chain Identity"}
             </button>
           )}
-          <p className="text-zinc-600 text-[10px] uppercase tracking-widest">
+          <p className="text-text-muted text-[10px] uppercase tracking-widest">
             {stayCount} activations · <span className="text-accent">{loyaltyPoints}</span> pts
           </p>
           <button
@@ -1208,7 +1208,7 @@ const Dashboard = ({
       </motion.div>
 
       <motion.div variants={itemVariants}>
-        <p className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-3">Saved Preferences</p>
+        <p className="text-text-muted text-[10px] font-mono uppercase tracking-widest mb-3">Saved Preferences</p>
         <div className="grid grid-cols-2 gap-3">
           {[
             { icon: Thermometer, label: "Sleep Temp", value: "19°C" },
@@ -1218,7 +1218,7 @@ const Dashboard = ({
           ].map((pref) => (
             <Card key={pref.label} className="p-4 space-y-2">
               <pref.icon size={16} className="text-accent" />
-              <p className="text-zinc-500 text-[9px] uppercase tracking-widest">{pref.label}</p>
+              <p className="text-text-muted text-[9px] uppercase tracking-widest">{pref.label}</p>
               <p className="font-bold">{pref.value}</p>
             </Card>
           ))}
@@ -1226,22 +1226,22 @@ const Dashboard = ({
       </motion.div>
 
       <motion.div variants={itemVariants}>
-        <p className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-3">On-Chain Identity</p>
+        <p className="text-text-muted text-[10px] font-mono uppercase tracking-widest mb-3">On-Chain Identity</p>
         <Card className="space-y-3 p-6">
           <div className="flex justify-between items-center">
-            <span className="text-zinc-500 text-xs">Wallet</span>
-            <span className="font-mono text-xs text-zinc-300">{walletAddress.slice(0, 12)}...{walletAddress.slice(-8)}</span>
+            <span className="text-text-muted text-xs">Wallet</span>
+            <span className="font-mono text-xs text-text-secondary">{walletAddress.slice(0, 12)}...{walletAddress.slice(-8)}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-zinc-500 text-xs">Network</span>
+            <span className="text-text-muted text-xs">Network</span>
             <span className="text-accent font-mono text-xs">Solana Devnet</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-zinc-500 text-xs">Program</span>
-            <span className="font-mono text-[10px] text-zinc-500">FqtrH...boYk</span>
+            <span className="text-text-muted text-xs">Program</span>
+            <span className="font-mono text-[10px] text-text-muted">FqtrH...boYk</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-zinc-500 text-xs">Status</span>
+            <span className="text-text-muted text-xs">Status</span>
             <span className="text-emerald-500 font-mono text-xs font-bold">Authenticated</span>
           </div>
         </Card>
@@ -1249,7 +1249,7 @@ const Dashboard = ({
 
       <motion.div variants={itemVariants}>
         <Card className="p-6 text-center space-y-3">
-          <p className="text-zinc-600 text-[10px] uppercase tracking-widest">
+          <p className="text-text-muted text-[10px] uppercase tracking-widest">
             Your data is encrypted and stored on Solana.<br />
             Owned by you. Portable across every ORIN space.
           </p>
@@ -1260,7 +1260,7 @@ const Dashboard = ({
       <motion.div variants={itemVariants}>
         <button
           onClick={onLogout}
-          className="w-full flex items-center justify-center gap-2 py-3 text-zinc-500 hover:text-red-400 transition-colors text-sm"
+          className="w-full flex items-center justify-center gap-2 py-3 text-text-muted hover:text-red-400 transition-colors text-sm"
         >
           <LogOut size={16} /> Disconnect Wallet
         </button>
@@ -1286,13 +1286,13 @@ const Dashboard = ({
   ];
 
   return (
-    <div className="min-h-screen bg-background text-white flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-background text-text-primary flex flex-col overflow-hidden">
       {/* Top Bar — Refactored for Mobile */}
-      <div className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4 border-b border-zinc-900/50 flex-shrink-0 bg-background/80 backdrop-blur-md z-[60]">
+      <div className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4 border-b border-border/50 flex-shrink-0 bg-background/80 backdrop-blur-md z-[60]">
         <div className="flex items-center gap-2 md:gap-3">
           <Logo className="w-7 h-7 md:w-8 md:h-8" />
           <div className="flex flex-col">
-            <span className="text-white/80 text-[10px] md:text-sm font-bold uppercase tracking-wider leading-none">ORIN</span>
+            <span className="text-text-secondary text-[10px] md:text-sm font-bold uppercase tracking-wider leading-none">ORIN</span>
             <span className="text-accent font-mono text-[8px] md:text-[9px] uppercase tracking-widest mt-0.5 animate-pulse truncate max-w-[80px] md:max-w-none">
               {guestPda ? `ROOM_${guestPda.toBase58().slice(0, 4)}` : "ROOM_INIT"}
             </span>
@@ -1302,7 +1302,7 @@ const Dashboard = ({
         <div className="flex items-center gap-2 md:gap-3">
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-xl bg-zinc-900/50 border border-zinc-800 text-zinc-400 hover:text-accent hover:border-accent/30 transition-all flex items-center justify-center"
+            className="p-2 rounded-xl bg-card/50 border border-border text-text-muted hover:text-accent hover:border-accent/30 transition-all flex items-center justify-center"
             title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
           >
             {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
@@ -1312,7 +1312,7 @@ const Dashboard = ({
           </div>
           <button
             onClick={onLogout}
-            className="p-1.5 md:p-2 text-zinc-500 hover:text-white transition-colors"
+            className="p-1.5 md:p-2 text-text-muted hover:text-text-primary transition-colors"
             title="Sign Out"
           >
             <LogOut size={18} />
@@ -1339,7 +1339,7 @@ const Dashboard = ({
       </div>
 
       {/* Bottom Nav — Refined for Premium Mobile Feel */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-2xl border-t border-zinc-900/50 pb-safe z-[60]">
+      <div className="fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-2xl border-t border-border/50 pb-safe z-[60]">
         <div className="flex justify-around items-center max-w-2xl mx-auto px-4 py-2 md:py-3">
           {tabs.map((tab) => (
             <button
@@ -1347,7 +1347,7 @@ const Dashboard = ({
               onClick={() => setActiveTab(tab.id)}
               className={cn(
                 "flex flex-col items-center gap-1.5 transition-all relative group py-2 md:py-1 px-4 rounded-2xl active:bg-accent/5",
-                activeTab === tab.id ? "text-accent" : "text-zinc-500 hover:text-zinc-300"
+                activeTab === tab.id ? "text-accent" : "text-text-muted hover:text-text-secondary"
               )}
             >
               <tab.icon size={20} className={cn("transition-all duration-300", activeTab === tab.id ? "scale-110 drop-shadow-[0_0_8px_rgba(196,169,122,0.4)]" : "group-hover:scale-110")} />
