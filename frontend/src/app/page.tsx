@@ -1323,7 +1323,9 @@ const Dashboard = ({
       {/* Main Content Area — Viewport Hardened */}
       <div className={cn(
         "flex-1 max-w-2xl mx-auto w-full no-scrollbar relative",
-        activeTab === "assistant" ? "h-[calc(100dvh-120px)] md:h-full overflow-hidden flex flex-col px-4 md:px-6" : "overflow-y-auto p-4 md:p-6 pb-24"
+        activeTab === "assistant" 
+          ? "h-[calc(100dvh-120px)] md:h-[calc(100vh-160px)] overflow-hidden flex flex-col px-4 md:px-6" 
+          : "overflow-y-auto p-4 md:p-6 pb-32 md:pb-48"
       )}>
         <AnimatePresence mode="wait">
           <motion.div
