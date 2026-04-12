@@ -13,7 +13,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import dynamic from "next/dynamic";
 import {
   Brain,
   Fingerprint,
@@ -53,6 +52,7 @@ import { cn } from "../lib/utils";
 // Wallet & Solana Hooks
 import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
+import { usePrivy } from "@privy-io/react-auth";
 import { transcribeAudio, fetchFastVoiceReply, fetchDeviceStatus, fetchTtsAudio, updateGuestAvatar, fetchGuestProfileApi } from "../lib/api";
 import { saveManualPreferences, saveVoicePreferences, getRelayOpts, RoomPreferences } from "../lib/savePreferences";
 import { getProgram, getProvider, initializeGuestOnChain, fetchGuestProfile, getConnection } from "../lib/solana";
@@ -67,10 +67,18 @@ const ThemeContext = React.createContext<{ theme: "dark" | "light"; toggleTheme:
 
 export const useTheme = () => React.useContext(ThemeContext);
 
-// Dynamic imports for wallet components (SSR-incompatible)
-const WalletMultiButton = dynamic(
-  () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
-  { ssr: false }
+
+// Cartesia Startups Logo (Grant Compliance Requirement)
+const CartesiaLogo = () => (
+  <a href="https://cartesia.ai" target="_blank" rel="noopener noreferrer" className="opacity-40 hover:opacity-70 transition-opacity">
+    <div className="flex items-center gap-1.5">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M8 12h8M12 8v8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+      <span className="text-[8px] font-mono uppercase tracking-[0.2em]">Cartesia Startups</span>
+    </div>
+  </a>
 );
 
 // --- Types ---
@@ -154,6 +162,7 @@ const StatusBadge = ({ active, label }: { active: boolean; label: string }) => {
 // ============================================================
 
 const LandingPage = ({ onConnect }: { onConnect: () => void }) => {
+  const { login, ready, authenticated } = usePrivy();
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: { opacity: 1, transition: { staggerChildren: 0.15, delayChildren: 0.2 } }
@@ -183,11 +192,17 @@ const LandingPage = ({ onConnect }: { onConnect: () => void }) => {
 
       <motion.div variants={itemVariants} className="w-full max-w-[280px] xs:max-w-sm space-y-6 mt-10 md:mt-12">
         <div className="flex flex-col items-center gap-4">
-          <div className="[&>button]:w-full [&>button]:justify-center [&>button]:h-12 md:[&>button]:h-14 [&>button]:rounded-xl md:[&>button]:rounded-2xl">
-            <WalletMultiButton />
-          </div>
+          {/* Privy Login — Sole Auth Method (Email, X, Wallet) */}
+          <button
+            onClick={login}
+            disabled={!ready}
+            className="w-full h-12 md:h-14 rounded-xl md:rounded-2xl bg-accent text-[#332F2E] font-bold text-sm hover:bg-accent-light transition-all accent-glow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <Wallet size={16} />
+            {!ready ? "Loading..." : "Sign In to ORIN"}
+          </button>
           <p className="text-text-muted text-[10px] font-mono uppercase tracking-widest px-8">
-            Connect with Phantom or Coinbase
+            Email · X (Twitter) · Phantom · Solflare
           </p>
         </div>
       </motion.div>
@@ -1406,6 +1421,7 @@ const Dashboard = ({
 export default function App() {
   const { connected, publicKey, disconnect } = useWallet();
   const wallet = useAnchorWallet();
+  const { logout: privyLogout, authenticated: privyAuthenticated } = usePrivy();
   const [view, setView] = useState<View>("landing");
   const [isLoading, setIsLoading] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -1521,7 +1537,7 @@ export default function App() {
     syncProfile(name);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("orin_guest_name");
     localStorage.removeItem("orin_guest_email");
     setGuestName("");
@@ -1529,6 +1545,10 @@ export default function App() {
     setProfileData(null);
     setHasAttemptedSync(false);
     disconnect();
+    // Also sign out of Privy if authenticated
+    if (privyAuthenticated) {
+      try { await privyLogout(); } catch (e) { console.warn("[ORIN] Privy logout error:", e); }
+    }
     setView("landing");
   };
 
@@ -1587,6 +1607,10 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Footer — Cartesia Startups Grant Compliance */}
+        <footer className="mt-auto py-4 px-6 flex justify-center items-center">
+          <CartesiaLogo />
+        </footer>
       </div>
     </div>
   </ThemeContext.Provider>

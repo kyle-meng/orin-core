@@ -1,9 +1,14 @@
 /**
- * Solana Wallet Provider
+ * Solana Infrastructure Provider
  * ---------------------------------------------------
- * Wraps the application with the Solana wallet adapter
- * context providers. This enables wallet connection
- * throughout the app tree.
+ * Provides Solana Connection context and wallet adapter bridge.
+ * 
+ * NOTE: Wallet UI is handled ENTIRELY by Privy.
+ * This provider only supplies:
+ *   1. ConnectionProvider — RPC endpoint for Anchor operations
+ *   2. WalletProvider — wallet state bridge (Privy ↔ Anchor)
+ * 
+ * The old WalletModalProvider is removed — Privy's modal replaces it.
  */
 
 "use client";
@@ -13,10 +18,7 @@ import {
   ConnectionProvider,
   WalletProvider,
 } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { clusterApiUrl } from "@solana/web3.js";
-
-import "@solana/wallet-adapter-react-ui/styles.css";
 
 interface Props {
   children: React.ReactNode;
@@ -29,14 +31,15 @@ export default function SolanaWalletProvider({ children }: Props) {
     []
   );
 
-  // Empty array = auto-detect installed wallets (Phantom, Solflare, etc.)
-  // For embedded wallets (Privy/Dynamic), this would be swapped later.
+  // Empty array — Privy's toSolanaWalletConnectors handles wallet injection.
+  // Privy bridges both external (Phantom/Solflare) and embedded wallets
+  // into the standard adapter, so useWallet()/useAnchorWallet() still work.
   const wallets = useMemo(() => [], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
+        {children}
       </WalletProvider>
     </ConnectionProvider>
   );
