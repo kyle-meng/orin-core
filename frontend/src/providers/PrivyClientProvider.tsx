@@ -37,6 +37,7 @@ export default function PrivyClientProvider({ children }: Props) {
           accentColor: "#C4A97A",
           logo: undefined,
           walletChainType: "solana-only",
+          walletList: ["phantom", "solflare", "backpack", "detected_solana_wallets"],
         },
         loginMethods: ["email", "twitter", "wallet"],
         embeddedWallets: {

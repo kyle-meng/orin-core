@@ -1507,6 +1507,23 @@ export default function App() {
   const [hasAttemptedSync, setHasAttemptedSync] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
+  // Silence Privy-internal React Key Warnings (Silence 'xe' child warning)
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      const originalError = console.error;
+      console.error = (...args) => {
+        if (
+          args[0]?.includes?.('Each child in a list should have a unique "key" prop') &&
+          (args[0]?.includes?.('xe') || args[2]?.includes?.('xe'))
+        ) {
+          return;
+        }
+        originalError.apply(console, args);
+      };
+      return () => { console.error = originalError; };
+    }
+  }, []);
+
   // Robust Solana Address Detection (Priority: Adapter > Privy User)
   const derivedAddress = useMemo(() => {
     if (publicKey) return publicKey.toBase58();
