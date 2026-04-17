@@ -71,8 +71,17 @@ export interface ManualPreferencesResponse {
  */
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-const API_KEY =
-  process.env.NEXT_PUBLIC_API_KEY || "orin_secret_key_2026_dev";
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
+
+function getApiHeaders(extraHeaders?: Record<string, string>): Record<string, string> {
+  if (!API_KEY) {
+    throw new Error("Missing NEXT_PUBLIC_API_KEY. Please set it in your frontend environment.");
+  }
+  return {
+    "X-API-KEY": API_KEY,
+    ...extraHeaders,
+  };
+}
 
 /**
  * Step A: Sends the raw voice command / preferences to the backend.
@@ -88,10 +97,7 @@ export async function stageVoiceCommand(
 ): Promise<VoiceCommandResponse> {
   const response = await fetch(`${API_BASE}/api/v1/voice-command`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
 
@@ -117,10 +123,7 @@ export async function stageManualPreferences(
 ): Promise<ManualPreferencesResponse> {
   const response = await fetch(`${API_BASE}/api/v1/preferences`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
 
@@ -153,9 +156,7 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
 
   const response = await fetch(`${API_BASE}/api/v1/transcribe`, {
     method: "POST",
-    headers: {
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders(),
     // Don't set Content-Type header manually when sending FormData,
     // fetch will automatically set it to multipart/form-data
     body: formData,
@@ -193,10 +194,7 @@ export interface RelayResponse {
 export async function relayTransaction(serializedTx: string): Promise<RelayResponse> {
   const response = await fetch(`${API_BASE}/api/v1/relay`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ transaction: serializedTx }),
   });
 
@@ -228,10 +226,7 @@ export async function fetchFastVoiceReply(payload: {
 }> {
   const response = await fetch(`${API_BASE}/api/v1/voice-fast`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
 
@@ -295,9 +290,7 @@ export interface GuestProfileApiResponse {
 export async function fetchDeviceStatus(guestPda: string): Promise<RoomDeviceState> {
   const response = await fetch(`${API_BASE}/api/v1/device/status?guestPda=${guestPda}`, {
     method: "GET",
-    headers: {
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders(),
   });
 
   if (!response.ok) {
@@ -316,10 +309,7 @@ export async function fetchDeviceStatus(guestPda: string): Promise<RoomDeviceSta
 export async function fetchTtsAudio(text: string): Promise<TtsResponse> {
   const response = await fetch(`${API_BASE}/api/v1/tts`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ text }),
   });
 
@@ -333,9 +323,7 @@ export async function fetchTtsAudio(text: string): Promise<TtsResponse> {
 
 export async function fetchGuestProfileApi(guestPda: string): Promise<GuestProfileApiResponse> {
   const response = await fetch(`${API_BASE}/api/v1/guest/profile?guestPda=${guestPda}`, {
-    headers: {
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders(),
   });
   if (!response.ok) {
     throw new Error(`Profile API error: ${response.status}`);
@@ -346,10 +334,7 @@ export async function fetchGuestProfileApi(guestPda: string): Promise<GuestProfi
 export async function updateGuestAvatar(guestPda: string, avatarUrl: string): Promise<void> {
   const response = await fetch(`${API_BASE}/api/v1/guest/avatar_update`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-KEY": API_KEY,
-    },
+    headers: getApiHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ guestPda, avatarUrl }),
   });
   if (!response.ok) {

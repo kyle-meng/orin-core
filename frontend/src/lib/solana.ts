@@ -12,21 +12,36 @@
 import { Program, AnchorProvider, Idl } from "@coral-xyz/anchor";
 import {
   Connection,
+  ConnectionConfig,
   PublicKey,
   SystemProgram,
   clusterApiUrl,
 } from "@solana/web3.js";
 import { ORIN_PROGRAM_ID } from "./pda";
 
+type ProviderWalletLike = {
+  signTransaction?: (tx: any) => Promise<any>;
+  signAllTransactions?: (txs: any[]) => Promise<any[]>;
+};
+
 /** Solana Devnet RPC endpoint */
 const RPC_ENDPOINT =
   process.env.NEXT_PUBLIC_RPC_ENDPOINT || clusterApiUrl("devnet");
+const RPC_WS_ENDPOINT = process.env.NEXT_PUBLIC_RPC_WS_ENDPOINT;
+let sharedConnection: Connection | null = null;
 
 /**
  * Creates a Solana Connection instance for Devnet.
  */
 export function getConnection(): Connection {
-  return new Connection(RPC_ENDPOINT, "confirmed");
+  if (!sharedConnection) {
+    const config: ConnectionConfig = {
+      commitment: "confirmed",
+      ...(RPC_WS_ENDPOINT ? { wsEndpoint: RPC_WS_ENDPOINT } : {}),
+    };
+    sharedConnection = new Connection(RPC_ENDPOINT, config);
+  }
+  return sharedConnection;
 }
 
 /**
@@ -50,6 +65,33 @@ export function getProvider(wallet: any): AnchorProvider {
  */
 export function getProgram(provider: AnchorProvider, idl: Idl): Program {
   return new Program(idl, provider);
+}
+
+/**
+ * Signs a transaction using whichever signing interface the injected wallet supports.
+ * Some Privy/wallet-adapter bridges expose `signAllTransactions` but not `signTransaction`.
+ */
+async function signTxWithProviderWallet(program: Program, tx: any): Promise<any> {
+  const wallet = (program.provider as any)?.wallet as ProviderWalletLike | undefined;
+  if (!wallet) {
+    throw new Error("Wallet signer not available on Anchor provider.");
+  }
+
+  if (typeof wallet.signTransaction === "function") {
+    return wallet.signTransaction(tx);
+  }
+
+  if (typeof wallet.signAllTransactions === "function") {
+    const signed = await wallet.signAllTransactions([tx]);
+    if (!signed?.[0]) {
+      throw new Error("Wallet returned no signed transaction.");
+    }
+    return signed[0];
+  }
+
+  throw new Error(
+    "Connected wallet does not support transaction signing (signTransaction/signAllTransactions)."
+  );
 }
 
 /**
@@ -121,7 +163,7 @@ export async function updatePreferencesOnChain(
       .instruction();
     tx.add(updateIx);
 
-    const signedTx = await (program.provider as any).wallet.signTransaction(tx);
+    const signedTx = await signTxWithProviderWallet(program, tx);
     const sig = await connection.sendRawTransaction(signedTx.serialize());
     await connection.confirmTransaction(sig, "confirmed");
     return sig;
@@ -157,7 +199,7 @@ export async function updatePreferencesOnChain(
   tx.add(updateIx);
 
   // Guest wallet partial-signs — authorizes the instruction; fee-payer sig is missing
-  const signedTx = await (program.provider as any).wallet.signTransaction(tx);
+  const signedTx = await signTxWithProviderWallet(program, tx);
 
   // Serialize without requiring all sigs (fee-payer sig will be added by server)
   const serialized = signedTx.serialize({ requireAllSignatures: false }).toString("base64");
@@ -233,7 +275,7 @@ export async function initializeGuestOnChain(
   tx.add(instruction);
 
   // Guest wallet partial-signs — authorizes the instruction only
-  const signedTx = await (program.provider as any).wallet.signTransaction(tx);
+  const signedTx = await signTxWithProviderWallet(program, tx);
 
   // Serialize without requiring fee-payer signature (server will add it)
   const serialized = signedTx.serialize({ requireAllSignatures: false }).toString("base64");

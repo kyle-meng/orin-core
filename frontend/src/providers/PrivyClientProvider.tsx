@@ -39,7 +39,10 @@ export default function PrivyClientProvider({ children }: Props) {
           walletChainType: "solana-only",
           walletList: ["phantom", "solflare", "backpack", "detected_solana_wallets"],
         },
-        loginMethods: ["email", "twitter", "wallet"],
+        loginMethodsAndOrder: {
+          primary: ["email", "twitter", "phantom", "solflare"],
+          overflow: ["backpack"],
+        },
         embeddedWallets: {
           solana: {
             createOnLogin: "users-without-wallets",
