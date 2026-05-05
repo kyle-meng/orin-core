@@ -78,12 +78,13 @@ export async function syncGuestPreferencesToFirestore(
         mode: state.nest.mode,
       },
       music: state.music,
+      music_url: state.music_url ?? null,
       lastUpdatedAt: state.lastUpdatedAt,
       recordedAt: now,
     });
 
     logger.info(
-      { guestPda, sessionId, lighting: state.lighting, music: state.music },
+      { guestPda, sessionId, lighting: state.lighting, music: state.music, music_url: state.music_url },
       "firestore_guest_preferences_synced"
     );
   } catch (err) {

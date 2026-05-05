@@ -6,6 +6,8 @@ import WebSocket from "ws";
 import { createClient } from "@deepgram/sdk";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { getOrCreateAssociatedTokenAccount, transfer, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
+import fastifyStatic from "@fastify/static";
+import path from "path";
 import { randomUUID } from "node:crypto";
 import { validateEnvOrExit } from "../config/validate_env";
 import { getEnv, getAllowedOrigins } from "../config/env";
@@ -96,6 +98,20 @@ const ALLOWED_HEADERS: string[] = [
 const EXPOSED_HEADERS: string[] = ["X-Request-ID"];
 
 const app = Fastify({ logger: false });
+
+// ---------------------------------------------------------------------------
+// Static file serving — music library
+// ---------------------------------------------------------------------------
+// Serves backend/public/ at the root URL.
+// e.g. GET /music/Luxe%20Jazz%20Classics/track-1.mp3
+app.register(fastifyStatic, {
+  root: path.join(__dirname, "../../public"),
+  prefix: "/",
+  setHeaders: (res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Production Logging Interceptors

@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { getEnv } from "./config/env";
 import { generateSha256Hash } from "./shared/hash";
 import { logger } from "./shared/logger";
@@ -24,6 +26,7 @@ export interface OrinAgentOutput {
   lighting: LightingMode;
   brightness: number;
   music: string;
+  music_url?: string; // Resolved URL for frontend playback
   services: string[];
   raw_response: string;
   action_required: boolean;
@@ -37,6 +40,44 @@ const MUSIC_LIST = [
   "Silk & Soul R&B",
   "Classical Elegance"
 ];
+
+const MUSIC_PUBLIC_DIR = path.join(__dirname, "../public/music");
+
+
+/**
+ * Dynamically scans public/music/{category}/ folders at startup.
+ * Any .mp3 / .ogg / .flac file dropped into a category folder is auto-detected.
+ * URL path: /music/{category}/{filename}
+ */
+function buildMusicTracks(): Record<string, string[]> {
+  const tracks: Record<string, string[]> = {};
+  if (!fs.existsSync(MUSIC_PUBLIC_DIR)) return tracks;
+
+  const categories = fs.readdirSync(MUSIC_PUBLIC_DIR).filter((name) => {
+    return fs.statSync(path.join(MUSIC_PUBLIC_DIR, name)).isDirectory();
+  });
+
+  for (const category of categories) {
+    const dir = path.join(MUSIC_PUBLIC_DIR, category);
+    const files = fs.readdirSync(dir).filter((f) => /\.(mp3|ogg|flac|wav)$/i.test(f)).sort();
+    if (files.length > 0) {
+      tracks[category] = files.map((f) => `/music/${encodeURIComponent(category)}/${encodeURIComponent(f)}`);
+    }
+  }
+
+  return tracks;
+}
+
+export const MUSIC_TRACKS: Record<string, string[]> = buildMusicTracks();
+
+export function resolveMusicCategoryToUrl(category: string): string | null {
+  if (!category) return null;
+  const tracks = MUSIC_TRACKS[category];
+  if (!tracks || tracks.length === 0) return null;
+  const randomIndex = Math.floor(Math.random() * tracks.length);
+  return tracks[randomIndex];
+}
+
 
 const SYSTEM_PROMPT = `You are ORIN, the Elite Concierge and Luxury Property Management System. Your purpose is to provide flawless, automated assistance via voice.
 
@@ -269,6 +310,7 @@ export class OrinAgent {
         SYSTEM_PROMPT,
         "Personalize responses with guest context, especially loyalty points.",
         "If a 'persona' is present in the context, proactively adapt your device settings and tone to match their long-term habits.",
+        "CRITICAL: If the user says they are 'hot', 'cold', 'warm', or 'freezing', you MUST adjust the thermostat 'temp' appropriately (e.g. lowering temp for 'hot'). Do NOT confuse this with 'lighting' modes.",
         "You MUST output only valid JSON with this exact schema and no extra keys:",
         '{ "temp": number, "lighting": "warm" | "cold" | "ambient", "brightness": number, "music": string, "services": string[], "raw_response": string, "action_required": boolean }',
         "`brightness` must be between 0 and 100. Default is 80 if not specified.",
@@ -462,6 +504,7 @@ export class OrinAgent {
       lighting: obj.lighting as LightingMode, 
       brightness: obj.brightness,
       music: obj.music,
+      music_url: resolveMusicCategoryToUrl(obj.music) ?? undefined,
       services: obj.services, 
       raw_response: obj.raw_response,
       action_required: obj.action_required

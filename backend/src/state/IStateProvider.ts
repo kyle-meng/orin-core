@@ -44,6 +44,8 @@ export interface RoomDeviceState {
   };
   /** Music player — name from the MUSIC_LIST, or "" when off */
   music: string;
+  /** Resolved playable URL for the frontend */
+  music_url?: string;
   /** ISO-8601 timestamp of last update */
   lastUpdatedAt: string;
   /** Solana PDA of guest who triggered the last change */

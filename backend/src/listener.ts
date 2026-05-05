@@ -160,6 +160,7 @@ export function startSecureGatewayListener(): number {
               mode: resolvedTemp >= 24 ? "COOL" : "HEAT",
             },
             music: payload.music ?? "",
+            music_url: payload.music_url,
             lastUpdatedAt: new Date().toISOString(),
             lastGuestPda: guestPda,
           };
