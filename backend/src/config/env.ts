@@ -71,6 +71,9 @@ const envSchema = z.object({
    * Example: /home/firebase-adminsdk.json
    */
   FIREBASE_KEY: z.string().optional(),
+
+  PUSD_TOKEN_MINT_ADDRESS: z.string().min(1).default("8y7gWKDiGjkb6q9BLsctFghHTRzTMvbgjVx91BNnRrLK"),
+  FEE_PAYER_PUBKEY: z.string().min(1).default("H1r7NTzjrd2tnPGDCJHg1H4wJ8UXuS4TUUymFFK4XpJN"), // Add your actual pubkey default or make it required
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;

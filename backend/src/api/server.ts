@@ -4,7 +4,8 @@ import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import WebSocket from "ws";
 import { createClient } from "@deepgram/sdk";
-import { Connection } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { getOrCreateAssociatedTokenAccount, transfer, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { randomUUID } from "node:crypto";
 import { validateEnvOrExit } from "../config/validate_env";
 import { getEnv, getAllowedOrigins } from "../config/env";
@@ -1269,6 +1270,134 @@ app.post<{ Body: { transaction: string } }>("/api/v1/relay", async (request, rep
   }
 });
 
+/**
+ * PUSD FAUCET ENDPOINT
+ * -------------------------------------------------------------
+ * Transfers 1000 PUSD to the provided wallet address for testing purposes.
+ */
+app.post<{ Body: { walletAddress: string } }>("/api/v1/faucet/pusd", async (request, reply) => {
+  const reqLogger = request.reqLogger;
+
+  const { walletAddress } = request.body ?? {};
+  if (!walletAddress) {
+    return reply.status(400).send({ error: "Required: walletAddress" });
+  }
+
+  let recipientPubKey: PublicKey;
+  try {
+    recipientPubKey = new PublicKey(walletAddress);
+  } catch (err) {
+    return reply.status(400).send({ error: "Invalid walletAddress format" });
+  }
+
+  const connection = new Connection(RPC_ENDPOINT, "confirmed");
+  const feePayer = getFeePayerKeypair();
+  const mintAddress = new PublicKey(env.PUSD_TOKEN_MINT_ADDRESS);
+  const amountToAirdrop = 1000 * 1000000; // 1000 PUSD (assuming 6 decimals)
+
+  try {
+    reqLogger.info({ walletAddress }, "pusd_faucet_request_initiated");
+
+    // Helper function to handle Devnet race conditions where the account is created but not yet visible to the RPC node.
+    async function getOrCreateATARetry(pubKey: PublicKey) {
+      let attempts = 0;
+      while (attempts < 5) {
+        try {
+          return await getOrCreateAssociatedTokenAccount(
+            connection,
+            feePayer,
+            mintAddress,
+            pubKey,
+            false,
+            "confirmed",
+            undefined,
+            TOKEN_2022_PROGRAM_ID
+          );
+        } catch (e: any) {
+          attempts++;
+          reqLogger.warn({ attempt: attempts, err: e.message || String(e) }, "getOrCreateATA failed, retrying...");
+          if (attempts >= 5) {
+            throw e;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+        }
+      }
+      throw new Error("Failed to get or create ATA after multiple attempts");
+    }
+
+    // Get the token account of the fromWallet address
+    let fromTokenAccount;
+    try {
+      fromTokenAccount = await getOrCreateATARetry(feePayer.publicKey);
+    } catch (e) {
+      reqLogger.error({ err: e }, "Failed to get/create FROM token account");
+      throw e;
+    }
+
+    // Get the token account of the toWallet address
+    let toTokenAccount;
+    try {
+      toTokenAccount = await getOrCreateATARetry(recipientPubKey);
+    } catch (e) {
+      reqLogger.error({ err: e }, "Failed to get/create TO token account");
+      throw e;
+    }
+
+    // Prevent abuse: check if recipient already has >= 2000 PUSD
+    const maxAllowedBalance = BigInt(2000 * 1000000); // 2000 PUSD with 6 decimals
+    if (toTokenAccount.amount >= maxAllowedBalance) {
+      reqLogger.warn(
+        { walletAddress, currentBalance: toTokenAccount.amount.toString() },
+        "pusd_faucet_rejected_balance_too_high"
+      );
+      return reply.status(403).send({
+        error: "Balance too high",
+        details: "This wallet already has 2000 or more test PUSD. Faucet limit reached.",
+      });
+    }
+
+    // Transfer the tokens
+    let signature;
+    let transferAttempts = 0;
+    while (transferAttempts < 5) {
+      try {
+        signature = await transfer(
+          connection,
+          feePayer,
+          fromTokenAccount.address,
+          toTokenAccount.address,
+          feePayer.publicKey,
+          amountToAirdrop,
+          [],
+          undefined,
+          TOKEN_2022_PROGRAM_ID
+        );
+        break; // Success
+      } catch (e: any) {
+        transferAttempts++;
+        reqLogger.warn({ attempt: transferAttempts, err: e.message || String(e) }, "Transfer failed, retrying...");
+        if (transferAttempts >= 5) {
+          throw e;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000 * transferAttempts));
+      }
+    }
+
+    reqLogger.info({ walletAddress, signature }, "pusd_faucet_transfer_success");
+
+    return reply.send({
+      status: "ok",
+      message: "1000 PUSD successfully transferred.",
+      signature,
+    });
+  } catch (error: any) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const logs = error.logs ? error.logs : undefined;
+    reqLogger.error({ error: msg, logs, rawError: error, stack: error.stack }, "pusd_faucet_transfer_error");
+    return reply.status(500).send({ error: "Failed to transfer PUSD", details: msg, logs, stack: error.stack, rawErrorName: error.name });
+  }
+});
+
 // ============================================================================
 // DUFFEL STAYS API — Hotel Search → Quote → Booking Pipeline
 // ============================================================================
@@ -1462,7 +1591,7 @@ app.post<{ Body: { rate_id: string } }>("/api/v1/stays/quote", async (request, r
  *     "guests": [{ "given_name": "James", "family_name": "Chen" }]
  *   }
  */
-app.post<{ Body: DuffelBookingRequest }>("/api/v1/stays/book", async (request, reply) => {
+app.post<{ Body: DuffelBookingRequest & { payment_method?: "fiat" | "PUSD"; amount_usd?: number } }>("/api/v1/stays/book", async (request, reply) => {
   const reqLogger = request.reqLogger;
 
   const apiKey = request.headers["x-api-key"];
@@ -1475,13 +1604,58 @@ app.post<{ Body: DuffelBookingRequest }>("/api/v1/stays/book", async (request, r
     return reply.status(503).send({ error: "Duffel integration is not configured." });
   }
 
-  const { quote_id, email, phone_number, guests } = request.body ?? ({} as DuffelBookingRequest);
+  const body = request.body ?? ({} as any);
+  const { quote_id, email, phone_number, guests, payment_method, amount_usd } = body;
+  
   if (!quote_id || !email || !phone_number || !guests?.length) {
     return reply.status(400).send({
       error: "Required: quote_id, email, phone_number, guests (min 1 with given_name + family_name)",
     });
   }
 
+  // --- CRYPTO (PUSD) PAYMENT FLOW ---
+  if (payment_method === "PUSD") {
+    if (!amount_usd) {
+      return reply.status(400).send({ error: "Required: amount_usd when using PUSD payment method" });
+    }
+
+    // Generate a canonical payload for the frontend to sign (similar to Hash-Lock)
+    const payload = {
+      quote_id,
+      amount: amount_usd,
+      currency: "PUSD",
+      timestamp: Date.now()
+    };
+    const hashHex = generateSha256Hash(payload).toString("hex");
+
+    // Stage the pending booking in Redis. The listener will finalize the Duffel booking
+    // once the blockchain transaction confirms the PUSD transfer with this memo hash.
+    await stateProvider.setDirectPayload(hashHex, {
+      type: "PUSD_BOOKING",
+      booking_details: request.body
+    });
+
+    reqLogger.info({ quote_id, amount_usd, hash: hashHex }, "pusd_booking_initiated");
+
+    // We dynamically derive the pubkey from the configured private key to ensure they always match
+    const feePayerPubkey = getFeePayerKeypair().publicKey.toBase58();
+
+    // Return exactly what the frontend needs to trigger the wallet transaction
+    return reply.send({
+      status: "accepted",
+      action_required: true,
+      message: "Payment required. Please approve the PUSD transaction in your wallet.",
+      payment_details: {
+        mint: env.PUSD_TOKEN_MINT_ADDRESS,
+        amount: amount_usd,
+        decimals: 6, // Assuming standard 6 decimals for stablecoins
+        memo_hash: hashHex,
+        recipient: feePayerPubkey // Orin treasury address
+      }
+    });
+  }
+
+  // --- FIAT/DEFAULT FLOW ---
   try {
     const confirmation = await createBooking(request.body);
     reqLogger.info(
@@ -1502,6 +1676,7 @@ app.post<{ Body: DuffelBookingRequest }>("/api/v1/stays/book", async (request, r
     return reply.status(500).send({ error: "Internal error during booking", details: msg });
   }
 });
+
 
 /**
  * GET BOOKING STATUS
