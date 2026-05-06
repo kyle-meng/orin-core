@@ -14,6 +14,7 @@ export interface GuestContext {
     lighting?: string;
     brightness?: number;
     musicOn?: boolean;
+    music?: string;
     services?: string[];
     raw_response?: string;
   };
@@ -308,11 +309,11 @@ export class OrinAgent {
         SYSTEM_PROMPT,
         "Personalize responses with guest context, especially loyalty points.",
         "If a 'persona' is present in the context, proactively adapt your device settings and tone to match their long-term habits.",
-        "CRITICAL: If the user says they are 'hot', 'cold', 'warm', or 'freezing', you MUST adjust the thermostat 'temp' appropriately (e.g. lowering temp for 'hot'). Do NOT confuse this with 'lighting' modes.",
+        "CRITICAL: If the user says they are 'hot', 'cold', 'warm', or 'freezing', you MUST adjust the thermostat 'temp' appropriately (e.g. lowering temp for 'hot').",
         "You MUST output only valid JSON with this exact schema and no extra keys:",
         '{ "temp": number, "lighting": "warm" | "cold" | "ambient", "brightness": number, "music": string, "services": string[], "raw_response": string, "action_required": boolean }',
         "`brightness` must be between 0 and 100. Default is 80 if not specified.",
-        "`action_required` MUST be true if you are changing ANY device settings or ordering services, and false if you are just answering a question or greeting.",
+        "`action_required` MUST be true if you are changing ANY device settings (temp, lights, music) or ordering services, and false ONLY if you are just answering a question or greeting without state change.",
         `\`music\` MUST always be chosen from this list: ${MUSIC_LIST.join(", ")}. Pick the best match based on the guest's request and room ambiance.`,
         "The `raw_response` must be 15 words maximum.",
         "Do not output markdown, code fences, or any extra text.",
@@ -341,9 +342,25 @@ export class OrinAgent {
       const payload = this.validateOutput(parsed);
 
       // Apply musicOn gate at the TypeScript layer — deterministic and reliable.
-      // AI always picks the best music; we decide whether to surface it to the client.
-      if (!guestContext.currentPreferences?.musicOn) {
+      // If the guest specifically turned music OFF in the past, we respect that unless the AI
+      // explicitly decides to turn it back ON or change it.
+      if (guestContext.currentPreferences?.musicOn === false && payload.music === guestContext.currentPreferences?.music) {
         payload.music = "";
+        payload.music_url = "";
+      }
+
+      // --- DETERMINISTIC STATE CHANGE CHECK ---
+      // If AI failed to set action_required correctly but DID change a device state, force it to true.
+      const prev = guestContext.currentPreferences;
+      const hasDeviceChange = 
+        (prev?.temp !== undefined && payload.temp !== prev.temp) ||
+        (prev?.lighting !== undefined && payload.lighting !== prev.lighting) ||
+        (prev?.brightness !== undefined && payload.brightness !== prev.brightness) ||
+        (prev?.music !== undefined && payload.music !== "" && payload.music !== prev.music) ||
+        (payload.services.length > 0);
+
+      if (hasDeviceChange) {
+        payload.action_required = true;
       }
 
       const hash = this.generateHash(payload);
