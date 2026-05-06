@@ -376,6 +376,7 @@ export default function Frontend2App() {
   const [hasMounted, setHasMounted] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const backgroundMusicRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastLocalRoomEditAt = useRef(0);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -587,6 +588,37 @@ export default function Frontend2App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, activeTab]);
 
+  // Audio Ducking: Lower volume when in Chat
+  useEffect(() => {
+    if (backgroundMusicRef.current) {
+      const targetVolume = activeTab === "chat" ? 0.08 : 0.3;
+      backgroundMusicRef.current.volume = targetVolume;
+    }
+  }, [activeTab]);
+
+  // Handle Playback & Autoplay Policy
+  useEffect(() => {
+    const audio = backgroundMusicRef.current;
+    if (audio && musicOn && musicUrl) {
+      const attemptPlay = () => {
+        audio.play().catch((error) => {
+          console.warn("Autoplay blocked or playback failed:", error);
+          // If blocked, we might need a user click to trigger it
+        });
+      };
+
+      // Set initial volume
+      audio.volume = activeTab === "chat" ? 0.08 : 0.3;
+      
+      if (audio.paused) {
+        attemptPlay();
+      }
+    } else if (audio && !musicOn) {
+      audio.pause();
+    }
+  }, [musicUrl, musicOn, activeTab]);
+
+
   const finishOnboarding = async () => {
     const finalName = onboardingName.trim() || "Guest";
     const initialRoomPrefs = buildRoomPrefsFromAnswers(answers);
@@ -636,8 +668,8 @@ export default function Frontend2App() {
     setView("landing");
   };
 
-  const handleCuratedSearch = useCallback(async (input: string) => {
-    setActiveTab("chat");
+  const handleCuratedSearch = useCallback(async (input: string, skipTabSwitch = false) => {
+    if (!skipTabSwitch) setActiveTab("chat");
     setIsChatBusy(true);
     appendMessage({ role: "user", text: input });
     const loadingId = appendMessage({ role: "orin", text: "Searching live curated stays for your profile..." });
@@ -652,6 +684,17 @@ export default function Frontend2App() {
       setIsChatBusy(false);
     }
   }, [appendMessage, loyaltyPoints, replaceMessage]);
+
+  // Auto-fetch stays when entering Booking tab if empty
+  useEffect(() => {
+    if (activeTab === "booking") {
+      const hasStays = messages.some(m => m.card?.type === "stays");
+      if (!hasStays && !isChatBusy) {
+        const query = persona ? `Recommend stays that fit my ORIN profile: ${persona}` : "Recommend premium hotel stays for me.";
+        void handleCuratedSearch(query, true); // true = stay on booking tab
+      }
+    }
+  }, [activeTab, messages, isChatBusy, handleCuratedSearch, persona]);
 
   const selectStay = (option: CuratedStayOption) => {
     const summary = buildBookingSummary(option, searchDefaults.check_in_date, searchDefaults.check_out_date, searchDefaults.guests, loyaltyPoints);
@@ -928,6 +971,18 @@ export default function Frontend2App() {
             {activeTab === "profile" && <ProfileScreen guestName={guestName} walletLabel={walletLabel} profileImage={profileImage} persona={persona} points={loyaltyPoints} temp={temp} brightness={brightness} lighting={lighting} music={musicOn ? music : "Off"} onAvatarChange={handleAvatarChange} onAirdropPusd={() => void handleAirdropPusd()} isAirdroppingPusd={isAirdroppingPusd} />}
           </motion.section>
         </AnimatePresence>
+ 
+        {/* Persistent Background Music Layer */}
+        {musicOn && musicUrl ? (
+          <audio
+            autoPlay
+            loop
+            key={musicUrl}
+            src={musicUrl}
+            className="hidden"
+            ref={backgroundMusicRef}
+          />
+        ) : null}
 
         <nav className="bottom-tab-bar" aria-label="Dashboard navigation">
           {[
@@ -976,7 +1031,7 @@ function Landing({ ready, onLogin }: { ready: boolean; onLogin: () => void }) {
           <p className="hero-copy hero-copy--entry">Every hotel already knows you.</p>
           <div className="hero-visual"><img src="/images/hero-phone.png" alt="ORIN app preview" /></div>
           <div className="cta-stack cta-stack--entry">
-            <button className="primary-button primary-button--entry" onClick={onLogin} disabled={!ready} type="button">{ready ? "Sign In to ORIN" : "Loading Privy..."}</button>
+            <button className="primary-button primary-button--entry" onClick={onLogin} disabled={ready === false} type="button">{ready ? "Sign In to ORIN" : "Enter ORIN..."}</button>
           </div>
         </section>
 
@@ -1249,7 +1304,7 @@ function PaymentSummary({ summary, paymentMethod, setPaymentMethod, approved, on
 }
 
 function RoomScreen({ temp, setTemp, brightness, setBrightness, lighting, setLighting, music, musicUrl, setMusic, musicOn, setMusicOn, isSaving, onSave }: { temp: number; setTemp: (value: number) => void; brightness: number; setBrightness: (value: number) => void; lighting: LightingMode; setLighting: (value: LightingMode) => void; music: string; musicUrl: string; setMusic: (value: string) => void; musicOn: boolean; setMusicOn: (value: boolean) => void; isSaving: boolean; onSave: () => void }) {
-  return <section className="room-screen"><header className="room-header"><div className="room-header-copy"><strong>Room Control</strong><span>Live canonical state</span></div><button className="bookmark-button" type="button"><Zap size={18} /></button></header><div className="preset-strip">{[{ label: "Relax", temp: 22, brightness: 35, lighting: "warm" as LightingMode, music: "Jazz" }, { label: "Focus", temp: 21, brightness: 85, lighting: "cold" as LightingMode, music: "Lo-Fi" }, { label: "Sleep", temp: 19, brightness: 10, lighting: "ambient" as LightingMode, music: "Ambient" }].map((preset) => <button className="preset-pill" key={preset.label} onClick={() => { setTemp(preset.temp); setBrightness(preset.brightness); setLighting(preset.lighting); setMusic(preset.music); setMusicOn(true); }} type="button">{preset.label}</button>)}</div><ControlPanel label="TEMPERATURE" value={temp} min={16} max={30} suffix="°C" onChange={setTemp} /><ControlPanel label="LIGHTS" value={brightness} min={0} max={100} suffix="%" onChange={setBrightness} /><article className="music-panel"><div className="music-panel-header"><strong>♫ MUSIC</strong><span>{musicOn ? music : "Off"}</span></div>{musicOn && musicUrl ? <audio className="music-url-player" controls src={musicUrl}>Your browser does not support audio playback.</audio> : null}<div className="music-options">{["Jazz", "Lo-Fi", "Ambient", "Classical"].map((option) => <button className={cn("music-option", musicOn && music === option && "music-option--active")} key={option} onClick={() => { setMusic(option); setMusicOn(true); }} type="button">{option}</button>)}<button className={cn("music-option", !musicOn && "music-option--active")} onClick={() => setMusicOn(false)} type="button">Off</button></div></article><button className="auth-primary auth-primary--enabled room-save" onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Syncing..." : "Save My Setup"} <span className="button-arrow">→</span></button></section>;
+  return <section className="room-screen"><header className="room-header"><div className="room-header-copy"><strong>Room Control</strong><span>Live canonical state</span></div><button className="bookmark-button" type="button"><Zap size={18} /></button></header><div className="preset-strip">{[{ label: "Relax", temp: 22, brightness: 35, lighting: "warm" as LightingMode, music: "Jazz" }, { label: "Focus", temp: 21, brightness: 85, lighting: "cold" as LightingMode, music: "Lo-Fi" }, { label: "Sleep", temp: 19, brightness: 10, lighting: "ambient" as LightingMode, music: "Ambient" }].map((preset) => <button className="preset-pill" key={preset.label} onClick={() => { setTemp(preset.temp); setBrightness(preset.brightness); setLighting(preset.lighting); setMusic(preset.music); setMusicOn(true); }} type="button">{preset.label}</button>)}</div><ControlPanel label="TEMPERATURE" value={temp} min={16} max={30} suffix="°C" onChange={setTemp} /><ControlPanel label="LIGHTS" value={brightness} min={0} max={100} suffix="%" onChange={setBrightness} /><article className="music-panel"><div className="music-panel-header"><strong>♫ MUSIC</strong><span>{musicOn ? music : "Off"}</span></div><div className="music-options">{["Jazz", "Lo-Fi", "Ambient", "Classical"].map((option) => <button className={cn("music-option", musicOn && music === option && "music-option--active")} key={option} onClick={() => { setMusic(option); setMusicOn(true); }} type="button">{option}</button>)}<button className={cn("music-option", !musicOn && "music-option--active")} onClick={() => setMusicOn(false)} type="button">Off</button></div></article><button className="auth-primary auth-primary--enabled room-save" onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Syncing..." : "Save My Setup"} <span className="button-arrow">→</span></button></section>;
 }
 
 function ControlPanel({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix: string; onChange: (value: number) => void }) {
