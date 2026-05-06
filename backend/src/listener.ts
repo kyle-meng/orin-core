@@ -126,53 +126,53 @@ export function startSecureGatewayListener(): number {
           services: payload.services,
         });
 
-        mqttClient.publish(IO_TOPICS.ROOM_CONTROL, mqttPayload, async (err?: Error) => {
+        // ─── CORE STATE UPDATE (always runs, independent of MQTT) ──────────────
+        // Both the api and listener processes share this state via stateProvider (Redis).
+        const COLOR_MAP: Record<string, string> = {
+          warm: "#FFB347",
+          cold: "#99CCFF",
+          ambient: "#FFFFFF",
+        };
+        // Resolve temperature: AI output uses `temp`, frontend direct payload uses `target_temp_c`
+        const resolvedTemp: number = payload.temp ?? (payload as any).target_temp_c ?? 22;
+
+        const deviceSnapshot: RoomDeviceState = {
+          roomId: "Room_"+guestPda.slice(0,4),
+          hue: {
+            color: COLOR_MAP[payload.lighting] ?? "#FFFFFF",
+            brightness: typeof payload.brightness === "number" ? payload.brightness : 80,
+            on: true,
+          },
+          lighting: payload.lighting,
+          nest: {
+            temp: resolvedTemp,
+            mode: resolvedTemp >= 24 ? "COOL" : "HEAT",
+          },
+          music: payload.music ?? "",
+          music_url: payload.music_url,
+          lastUpdatedAt: new Date().toISOString(),
+          lastGuestPda: guestPda,
+        };
+
+        await stateProvider.setDeviceState(deviceSnapshot.roomId, deviceSnapshot);
+        requestLog.info({ roomId: deviceSnapshot.roomId, music: deviceSnapshot.music, music_url: deviceSnapshot.music_url }, "device_state_updated");
+
+        await stateProvider.setValidatedState({
+          guestPda,
+          hashHex: onChainHashHex,
+          payload,
+          validatedAt: Date.now(),
+        });
+        await stateProvider.clearPendingCommand(guestPda);
+
+        // ─── MQTT PUBLISH (best-effort IoT notification, non-blocking) ─────────
+        // If MQTT broker is down, device state is already committed above.
+        mqttClient.publish(IO_TOPICS.ROOM_CONTROL, mqttPayload, (err?: Error) => {
           if (err) {
-            requestLog.error({ err: err.message }, "mqtt_publish_error");
-            return;
+            requestLog.warn({ err: err.message }, "mqtt_publish_error_non_fatal");
+          } else {
+            requestLog.info({ topic: IO_TOPICS.ROOM_CONTROL }, "mqtt_publish_success");
           }
-
-          requestLog.info(
-            { topic: IO_TOPICS.ROOM_CONTROL, payload: mqttPayload },
-            "mqtt_publish_success"
-          );
-
-          // Build and persist full room device snapshot to Redis.
-          // Both the api and listener processes share this state via stateProvider.
-          const COLOR_MAP: Record<string, string> = {
-            warm: "#FFB347",
-            cold: "#99CCFF",
-            ambient: "#FFFFFF",
-          };
-          // Resolve temperature: AI output uses `temp`, frontend direct payload uses `target_temp_c`
-          const resolvedTemp: number = payload.temp ?? (payload as any).target_temp_c ?? 22;
-
-          const deviceSnapshot: RoomDeviceState = {
-            roomId: "Room_"+guestPda.slice(0,4),
-            hue: {
-              color: COLOR_MAP[payload.lighting] ?? "#FFFFFF",
-              brightness: typeof payload.brightness === "number" ? payload.brightness : 80,
-              on: true,
-            },
-            lighting: payload.lighting,
-            nest: {
-              temp: resolvedTemp,
-              mode: resolvedTemp >= 24 ? "COOL" : "HEAT",
-            },
-            music: payload.music ?? "",
-            music_url: payload.music_url,
-            lastUpdatedAt: new Date().toISOString(),
-            lastGuestPda: guestPda,
-          };
-          await stateProvider.setDeviceState(deviceSnapshot.roomId, deviceSnapshot);
-
-          await stateProvider.setValidatedState({
-            guestPda,
-            hashHex: onChainHashHex,
-            payload,
-            validatedAt: Date.now(),
-          });
-          await stateProvider.clearPendingCommand(guestPda);
         });
 
         if (payload.raw_response) {

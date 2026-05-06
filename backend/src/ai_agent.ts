@@ -33,12 +33,10 @@ export interface OrinAgentOutput {
 }
 
 const MUSIC_LIST = [
-  "Luxe Jazz Classics",
-  "Midnight Chill Lounge",
-  "Ocean Breeze Acoustic",
-  "Deep Tech House Night",
-  "Silk & Soul R&B",
-  "Classical Elegance"
+  "Jazz",
+  "Lo-Fi",
+  "Ambient",
+  "Classical"
 ];
 
 const MUSIC_PUBLIC_DIR = path.join(__dirname, "../public/music");

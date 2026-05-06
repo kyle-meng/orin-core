@@ -13,7 +13,7 @@ import { validateEnvOrExit } from "../config/validate_env";
 import { getEnv, getAllowedOrigins } from "../config/env";
 import { stateProvider } from "../state";
 import { createRequestLogger, logger } from "../shared/logger";
-import { GuestContext, LlmError, OrinAgent } from "../ai_agent";
+import { GuestContext, LlmError, OrinAgent, resolveMusicCategoryToUrl } from "../ai_agent";
 import { generateSha256Hash } from "../shared/hash";
 import { getFeePayerKeypair, relayTransaction } from "../shared/feePayer";
 import { RPC_ENDPOINT } from "../shared/constants";
@@ -453,16 +453,25 @@ app.post<{ Body: ManualPreferencesBody }>("/api/v1/preferences", async (request,
     preferences.music = "";
   }
 
+  // Resolve the music category to a concrete playable URL
+  if (preferences.music) {
+    preferences.music_url = resolveMusicCategoryToUrl(preferences.music as string) ?? undefined;
+  } else {
+    preferences.music_url = undefined;
+  }
+
   // Hash ONLY the preferences canonical body — matching the AI agent output schema
   const hashHex = generateSha256Hash(preferences).toString("hex");
 
   await stateProvider.setDirectPayload(hashHex, preferences);
-  reqLogger.info({ guest_pda: guestPda, hash: hashHex, brightness, music: preferences.music }, "direct_payload_stored");
+  reqLogger.info({ guest_pda: guestPda, hash: hashHex, brightness, music: preferences.music, music_url: preferences.music_url }, "direct_payload_stored");
 
   return reply.status(200).send({
     status: "success",
     info: "Payload staged in Redis cache bypassing AI. Awaiting Solana Hash Verification signal.",
     hash: hashHex,
+    actionRequired: true,
+    requiresSignature: true,
   });
 });
 
@@ -653,6 +662,7 @@ app.get<{ Querystring: { guestPda?: string; roomId?: string } }>(
         hue: { color: "#FFFFFF", brightness: 80, on: true },
         nest: { temp: 22, mode: "AUTO" },
         music: "",
+        music_url: undefined,
         lastUpdatedAt: null,
         lastGuestPda: null,
       };

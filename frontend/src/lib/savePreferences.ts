@@ -144,7 +144,7 @@ export async function saveManualPreferences(
 
   // Sign only when the backend explicitly asks for a hash-lock update.
   // This keeps manual controls aligned with the intent-driven signature contract.
-  const requiresSignature = apiResponse.action_required === true;
+  const requiresSignature = apiResponse.action_required === true || apiResponse.requiresSignature === true;
 
   if (requiresSignature) {
     const { identifierHash } = deriveGuestPda(guestName, ownerPubkey);
