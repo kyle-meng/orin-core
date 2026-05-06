@@ -1729,6 +1729,28 @@ a {
   background: var(--accent);
 }
 
+.mic-button--recording {
+  background: #ff4d4d !important;
+  color: white !important;
+  animation: pulse-red 1.5s infinite;
+  box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.7);
+}
+
+@keyframes pulse-red {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 10px rgba(255, 77, 77, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(255, 77, 77, 0);
+  }
+}
+
 .booking-loading {
   min-height: calc(100dvh - 34px);
   display: grid;

@@ -373,6 +373,7 @@ export default function Frontend2App() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [bookingApproved, setBookingApproved] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -508,6 +509,7 @@ export default function Frontend2App() {
   }, [guestPda, syncRoomState]);
 
   useEffect(() => {
+    setHasMounted(true);
     document.documentElement.classList.add("light");
   }, []);
 
@@ -885,7 +887,12 @@ export default function Frontend2App() {
     }
   };
 
-  if (view === "landing") return <Landing ready={ready} onLogin={login} />;
+  if (!hasMounted) return <div className="app-shell" />;
+ 
+  if (view === "landing") {
+    return <Landing ready={ready} onLogin={login} />;
+  }
+ 
   if (view === "onboarding") {
     return (
       <Onboarding
