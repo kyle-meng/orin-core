@@ -73,7 +73,8 @@ const envSchema = z.object({
   FIREBASE_KEY: z.string().optional(),
 
   PUSD_TOKEN_MINT_ADDRESS: z.string().min(1).default("8y7gWKDiGjkb6q9BLsctFghHTRzTMvbgjVx91BNnRrLK"),
-  FEE_PAYER_PUBKEY: z.string().min(1).default("H1r7NTzjrd2tnPGDCJHg1H4wJ8UXuS4TUUymFFK4XpJN"), // Add your actual pubkey default or make it required
+  FEE_PAYER_PUBKEY: z.string().min(1).default("H1r7NTzjrd2tnPGDCJHg1H4wJ8UXuS4TUUymFFK4XpJN"),
+  ORIN_REWARD_KEY: z.string().min(87, "Must be a base58-encoded 64-byte Solana keypair"),
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;

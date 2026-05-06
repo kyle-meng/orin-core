@@ -54,6 +54,33 @@ export function getFeePayerKeypair(): Keypair {
   }
 }
 
+let _rewardAuthorityKeypair: Keypair | null = null;
+
+/**
+ * Returns a singleton Keypair loaded from ORIN_REWARD_KEY.
+ * Used exclusively for signing record_booking instructions.
+ */
+export function getRewardAuthorityKeypair(): Keypair {
+  if (_rewardAuthorityKeypair) return _rewardAuthorityKeypair;
+
+  const env = getEnv();
+  const raw = env.ORIN_REWARD_KEY;
+
+  try {
+    const secret = bs58.decode(raw);
+    _rewardAuthorityKeypair = Keypair.fromSecretKey(secret);
+    logger.info(
+      { reward_authority_pubkey: _rewardAuthorityKeypair.publicKey.toBase58() },
+      "reward_authority_loaded"
+    );
+    return _rewardAuthorityKeypair;
+  } catch (err) {
+    throw new Error(
+      "ORIN_REWARD_KEY is invalid. Must be a base58-encoded 64-byte secret key."
+    );
+  }
+}
+
 export interface RelayResult {
   signature: string;
   feePayerPubkey: string;

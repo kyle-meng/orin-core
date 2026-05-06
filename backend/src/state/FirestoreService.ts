@@ -187,3 +187,28 @@ export async function updateGuestPersona(guestPda: string, persona: string): Pro
 
   logger.info({ guestPda, personaLength: persona.length }, "guest_persona_updated");
 }
+
+/**
+ * Increments a guest's loyalty points in Firestore.
+ * This provides a fast-path for the UI to display updated points without
+ * waiting for the full blockchain confirmation/indexing.
+ *
+ * @param guestPda - The guest's Solana public key
+ * @param points   - Number of points to add
+ */
+export async function awardGuestPoints(guestPda: string, points: number): Promise<void> {
+  const { FieldValue } = require("firebase-admin/firestore");
+  const db = getFirestore();
+  const guestRef = db.collection("guests").doc(guestPda);
+
+  await guestRef.set(
+    {
+      guestPda,
+      loyaltyPoints: FieldValue.increment(points),
+      lastSeenAt: new Date(),
+    },
+    { merge: true }
+  );
+
+  logger.info({ guestPda, pointsAdded: points }, "guest_loyalty_points_awarded");
+}

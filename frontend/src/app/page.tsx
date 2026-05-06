@@ -263,7 +263,9 @@ function createTransferCheckedInstruction(
 
 async function executePusdPaymentTransfer(
   signerWallet: SignerWallet,
-  details: PusdPaymentDetails
+  details: PusdPaymentDetails,
+  program: any,
+  guestPda: PublicKey
 ) {
   if (!signerWallet.signTransaction) {
     throw new Error("Connected wallet does not support transaction signing.");
@@ -316,11 +318,24 @@ async function executePusdPaymentTransfer(
   tx.add(createAssociatedTokenAccountIdempotentInstruction(feePayer, recipientAta, recipient, mint));
   tx.add(createTransferCheckedInstruction(sourceAta, mint, recipientAta, payer, units, details.decimals));
   if (details.memo_hash) {
+    // 1. SPL Memo (legacy verification)
     tx.add({
       programId: MEMO_PROGRAM_ID,
       keys: [],
       data: Buffer.from(details.memo_hash, "utf8"),
     });
+
+    // 2. Identity Program Poke (Triggers the backend listener)
+    // Convert hex string to 32-byte array
+    const hashBytes = new Uint8Array(details.memo_hash.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+    const identityIx = await program.methods
+      .updatePreferences(Array.from(hashBytes))
+      .accounts({
+        guestProfile: guestPda,
+        owner: payer,
+      })
+      .instruction();
+    tx.add(identityIx);
   }
 
   // User partial-signs (authorises token debit); backend co-signs & broadcasts
@@ -584,9 +599,12 @@ export default function Frontend2App() {
       const connection = getConnection();
       const subscription = connection.onAccountChange(guestPda, () => {
         void refreshGroundTruth();
-        void fetchGuestProfileApi(guestPda.toBase58()).then((response) => {
-          if (response.profile) setProfile(response.profile);
-        }).catch(() => undefined);
+        // Slight delay to allow backend listener to finish Firestore sync
+        setTimeout(() => {
+          void fetchGuestProfileApi(guestPda.toBase58()).then((response) => {
+            if (response.profile) setProfile(response.profile);
+          }).catch(() => undefined);
+        }, 1500);
       }, "confirmed");
       return () => {
         void connection.removeAccountChangeListener(subscription);
@@ -785,6 +803,7 @@ export default function Frontend2App() {
         guests: [splitGuestName(guestName)],
         payment_method: paymentMethod === "pusd" ? "PUSD" : "Fiat",
         amount_usd: bookingSummary?.payableTotal ?? selectedStay.price,
+        points_to_redeem: bookingSummary?.pointsRedemption.pointsUsed ?? 0,
       });
 
       let paymentSignature = "";
@@ -792,8 +811,11 @@ export default function Frontend2App() {
         if (!response.payment_details) {
           throw new Error("Backend requested payment approval but did not return payment_details.");
         }
+        const provider = getProvider(signerWallet);
+        const program = getProgram(provider, idl as Idl);
+
         replaceMessage(loadingId, { text: response.message || "Payment required. Please approve the $PUSD transaction in your wallet." });
-        paymentSignature = await executePusdPaymentTransfer(signerWallet!, response.payment_details);
+        paymentSignature = await executePusdPaymentTransfer(signerWallet!, response.payment_details, program, guestPda!);
       }
 
       setBookingApproved(true);

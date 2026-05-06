@@ -124,6 +124,43 @@
       ]
     },
     {
+      "name": "redeem_points",
+      "docs": [
+        "Redeems (deducts) ORIN Credits from the guest's profile.",
+        "This is used to apply discounts during the booking process.",
+        "Only the authorized ORIN backend wallet can call this."
+      ],
+      "discriminator": [
+        178,
+        79,
+        85,
+        218,
+        121,
+        101,
+        34,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "guest_profile",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "guest_profile"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "points_to_redeem",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "update_preferences",
       "docs": [
         "Updates the guest's ambient preferences (Privacy-First Hash Verification Logic)",
@@ -200,6 +237,11 @@
       "code": 6003,
       "name": "PointsOverflow",
       "msg": "Arithmetic overflow: loyalty_points or stay_count has reached its maximum value."
+    },
+    {
+      "code": 6004,
+      "name": "InsufficientPoints",
+      "msg": "Insufficient points for redemption"
     }
   ],
   "types": [

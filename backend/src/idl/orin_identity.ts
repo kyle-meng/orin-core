@@ -130,6 +130,43 @@ export type OrinIdentity = {
       ]
     },
     {
+      "name": "redeemPoints",
+      "docs": [
+        "Redeems (deducts) ORIN Credits from the guest's profile.",
+        "This is used to apply discounts during the booking process.",
+        "Only the authorized ORIN backend wallet can call this."
+      ],
+      "discriminator": [
+        178,
+        79,
+        85,
+        218,
+        121,
+        101,
+        34,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "guestProfile",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "guestProfile"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "pointsToRedeem",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "updatePreferences",
       "docs": [
         "Updates the guest's ambient preferences (Privacy-First Hash Verification Logic)",
@@ -206,6 +243,11 @@ export type OrinIdentity = {
       "code": 6003,
       "name": "pointsOverflow",
       "msg": "Arithmetic overflow: loyalty_points or stay_count has reached its maximum value."
+    },
+    {
+      "code": 6004,
+      "name": "insufficientPoints",
+      "msg": "Insufficient points for redemption"
     }
   ],
   "types": [

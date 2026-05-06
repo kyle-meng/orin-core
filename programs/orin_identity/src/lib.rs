@@ -82,6 +82,27 @@ pub mod orin_identity {
         );
         Ok(())
     }
+
+    /// Redeems (deducts) ORIN Credits from the guest's profile.
+    /// This is used to apply discounts during the booking process.
+    /// Only the authorized ORIN backend wallet can call this.
+    pub fn redeem_points(ctx: Context<RecordBooking>, points_to_redeem: u64) -> Result<()> {
+        let guest_profile = &mut ctx.accounts.guest_profile;
+
+        // Checked subtraction prevents "negative" points (production safety)
+        guest_profile.loyalty_points = guest_profile
+            .loyalty_points
+            .checked_sub(points_to_redeem)
+            .ok_or(OrinError::InsufficientPoints)?;
+
+        msg!(
+            "Points redeemed for guest '{}'. Deducted: {}, New total: {}",
+            guest_profile.name,
+            points_to_redeem,
+            guest_profile.loyalty_points
+        );
+        Ok(())
+    }
 }
 
 /// ---------------------------
@@ -178,4 +199,6 @@ pub enum OrinError {
     UnauthorizedBooking,
     #[msg("Arithmetic overflow: loyalty_points or stay_count has reached its maximum value.")]
     PointsOverflow,
+    #[msg("Insufficient points for redemption")]
+    InsufficientPoints,
 }

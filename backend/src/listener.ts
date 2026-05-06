@@ -1,5 +1,5 @@
-import { BorshCoder, Idl } from "@coral-xyz/anchor";
-import { Connection } from "@solana/web3.js";
+import { BorshCoder, Idl, Program, AnchorProvider, Wallet, BN } from "@coral-xyz/anchor";
+import { Connection, PublicKey } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
 import mqtt from "mqtt";
@@ -11,6 +11,8 @@ import { stateProvider } from "./state";
 import { GuestContext } from "./ai_agent";
 import { getEnv } from "./config/env";
 import { RoomDeviceState } from "./state/IStateProvider";
+import { getFeePayerKeypair, getRewardAuthorityKeypair } from "./shared/feePayer";
+import { awardGuestPoints, syncGuestPreferencesToFirestore } from "./state/FirestoreService";
 
 validateEnvOrExit();
 
@@ -22,6 +24,12 @@ const idlPath = path.resolve(__dirname, PATHS.IDL_PATH);
 const audioPath = path.resolve(__dirname, PATHS.AUDIO_OUTPUT);
 const idl = JSON.parse(fs.readFileSync(idlPath, "utf8")) as Idl;
 const coder = new BorshCoder(idl);
+
+// Initialize Anchor Program for on-chain mutations (e.g. awarding points)
+const feePayer = getFeePayerKeypair();
+const rewardAuthority = getRewardAuthorityKeypair();
+const provider = new AnchorProvider(connection, new Wallet(feePayer), { commitment: "confirmed" });
+const program = new Program(idl, provider);
 
 const mqttClient = mqtt.connect(env.MQTT_BROKER_URL);
 mqttClient.on("connect", () => logger.info("mqtt_connected"));
@@ -90,8 +98,56 @@ export function startSecureGatewayListener(): number {
 
         if (directPayload) {
           requestLog.info({ hash: onChainHashHex }, "direct_payload_cache_hit_bypassing_ai");
+          
+          // --- PUSD BOOKING FLOW ---
+          if (directPayload.type === "PUSD_BOOKING") {
+            const booking = directPayload.booking_details;
+            const amountUsd = booking.amount_usd || 0;
+            const pointsToAward = Math.floor(amountUsd / 10);
+            
+            requestLog.info({ guestPda, amountUsd, pointsToAward }, "processing_pusd_booking_points");
+
+            try {
+              // 1. Point Redemption (if applicable)
+              const pointsToRedeem = booking.points_to_redeem || 0;
+              if (pointsToRedeem > 0) {
+                requestLog.info({ guestPda, pointsToRedeem }, "processing_points_redemption");
+                await program.methods
+                  .redeemPoints(new BN(pointsToRedeem))
+                  .accounts({
+                    guestProfile: new PublicKey(guestPda),
+                    authority: rewardAuthority.publicKey,
+                  })
+                  .signers([rewardAuthority])
+                  .rpc();
+                
+                // Update Firestore (subtracting points)
+                await awardGuestPoints(guestPda, -pointsToRedeem);
+              }
+
+              // 2. Award points on-chain (10% of PAID amount)
+              requestLog.info({ guestPda, pointsToAward }, "submitting_on_chain_reward");
+              const tx = await program.methods
+                .recordBooking(new BN(pointsToAward))
+                .accounts({
+                  guestProfile: new PublicKey(guestPda),
+                  authority: rewardAuthority.publicKey,
+                })
+                .signers([rewardAuthority])
+                .rpc();
+              
+              requestLog.info({ tx }, "points_awarded_on_chain");
+
+              // 3. Sync reward points to Firestore
+              await awardGuestPoints(guestPda, pointsToAward);
+            } catch (err) {
+              requestLog.error({ err: (err as Error).message }, "failed_to_process_points_cycle");
+            }
+            return; // Exit early: Booking is handled, don't try to update room state
+          }
+
           payload = directPayload;
-          aiHash = onChainHash; // Forced match since we queried Redis directly by the valid Hash
+          aiHash = onChainHash; 
         } else {
           // Standard AI processing flow
           const pending = await stateProvider.getPendingCommand(guestPda);

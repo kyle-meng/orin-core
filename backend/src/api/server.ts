@@ -1617,7 +1617,7 @@ app.post<{ Body: { rate_id: string } }>("/api/v1/stays/quote", async (request, r
  *     "guests": [{ "given_name": "James", "family_name": "Chen" }]
  *   }
  */
-app.post<{ Body: DuffelBookingRequest & { payment_method?: "fiat" | "PUSD"; amount_usd?: number } }>("/api/v1/stays/book", async (request, reply) => {
+app.post<{ Body: DuffelBookingRequest & { payment_method?: "fiat" | "PUSD"; amount_usd?: number; points_to_redeem?: number } }>("/api/v1/stays/book", async (request, reply) => {
   const reqLogger = request.reqLogger;
 
   const apiKey = request.headers["x-api-key"];

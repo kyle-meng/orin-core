@@ -471,6 +471,7 @@ export interface BookStayRequest {
   guests: BookStayGuest[];
   payment_method?: BookStayPaymentMethod;
   amount_usd: number;
+  points_to_redeem?: number;
 }
 
 export interface PusdPaymentDetails {
