@@ -19,6 +19,10 @@ const nunito = Nunito_Sans({
 export const metadata: Metadata = {
   title: "ORIN · Your AI Concierge",
   description: "ORIN Core: Your personal AI assistant for travel, hospitality, and smart environments. Powered by Solana.",
+  icons: {
+    icon: "/orin-logo.svg",
+    apple: "/orin-logo.svg",
+  },
 };
 
 export default function RootLayout({

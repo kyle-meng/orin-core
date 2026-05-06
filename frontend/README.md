@@ -1,14 +1,22 @@
-# ORIN Frontend
+# ORIN Frontend: The Premium Concierge
 
-> The ambient intelligence interface for ORIN - every space knows your song.
+> **Elevating hospitality through ambient intelligence and frictionless Web3 onboarding.**
+
+The ORIN frontend is a high-end, mobile-first dashboard designed for the modern traveler. It serves as the gateway to the ORIN DePIN protocol, allowing guests to manage their sovereign identity, room preferences, and hotel bookings through a single, elegant interface.
+
+## Premium User Experience
+- **Frictionless Social Login**: Integrated with **Privy**, allowing guests to create a Solana wallet using just an email or social account. 
+- **Implicit Registration**: New users are automatically registered on-chain during their first interaction (Save Setup/Pay), removing all Web3 onboarding friction.
+- **AI-Driven Interactions**: Real-time voice and text interface to control physical environments and curate hotel stays.
+- **Financial Clarity**: Transparent $PUSD payment flows with real-time status updates and on-chain loyalty point visualization.
 
 ## Tech Stack
-
 - **Framework:** Next.js 16 (App Router)
 - **Language:** TypeScript
-- **Styling:** Vanilla CSS (Cormorant Garamond + DM Mono)
-- **Blockchain:** Solana Devnet via `@coral-xyz/anchor` + `@solana/web3.js`
-- **Wallet:** `@solana/wallet-adapter-react`
+- **Styling:** Vanilla CSS (Curated Palette: Cormorant Garamond & DM Mono)
+- **Identity:** Privy (Social/Email Auth)
+- **Blockchain:** Solana Devnet via `@coral-xyz/anchor` & `@solana/web3.js`
+- **Stablecoin:** $PUSD (Spl-Token)
 
 ## Getting Started
 
@@ -75,7 +83,7 @@ Compatible with Vercel, Netlify, or any Node.js hosting. Set the root directory 
 
 ## .env.local.example
 # 1. Point to the Solana node on your local machine where the protocol was just successfully implemented (if left blank, the frontend will connect to Devnet by default).
-# NEXT_PUBLIC_RPC_ENDPOINT=http://127.0.0.1:8899
+NEXT_PUBLIC_RPC_ENDPOINT=http://127.0.0.1:8899
 
 # 2. Point to the main API gateway (port 3001) that you just started running on your local machine.
 NEXT_PUBLIC_API_URL=http://127.0.0.1:3001

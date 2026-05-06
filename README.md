@@ -6,67 +6,61 @@ ORIN is a revolutionary DePIN protocol that recognizes users across physical spa
 
 ---
 
-## Phase 1: MVP Architecture
-- **[On-chain]** **Sovereign Identity:** Anchor-based Guest PDA structure for immutable preference storage.
-- **[Middleware]** **Real-time Bridge:** High-performance Node.js & Firebase synchronization for sub-second physical response.
-- **[Physical]** **IoT Control:** Integrated Philips Hue & Google Nest control logic (Mocked for Phase 1 Demo).
+## Hackathon Highlights: Spring 2026
 
-## Modular Layers & Current Status
+We've moved beyond a simple IoT bridge to a full-stack hospitality settlement layer:
 
-### CEO & Product Visionary
-**Status:** Active & Scaling by @Shalom
+- **Frictionless Onboarding**: Our **Auto-Activation** technology allows new users to register on Solana implicitly during their first interaction (like saving a room preset or paying). No "Account Initialization" road-blocks.
+- **PUSD Loyalty Loop**: A complete circular economy. Pay with **$PUSD**, earn **ORIN Points** on-chain (10% reward), and redeem points for instant discounts (10:1 ratio) during your next booking.
+- **Hash-Lock Privacy**: Sovereign identity without the surveillance. Preferences are hashed locally; only 32-byte SHA-256 hashes are stored on-chain, ensuring absolute GDPR compliance while maintaining verifiability.
+- **AI Concierge**: Integrated voice-to-intent pipeline using **Groq** and **Deepgram**, mapping natural language to on-chain state transitions.
 
-The "Navigator" of ORIN, bridging technical innovation with real-world hospitality business.
-- **Business Development:** Leading partnerships with hotel chains and the Solana ecosystem.
-- **Fundraising & Growth:** Managing hackathon submissions, VC relations, and grant applications.
-- **Product Quality (CPO):** Defining the "Premium & Seamless" brand identity and ensuring the UX meets global hospitality standards.
-- **Strategy:** Aligning the "Web2.5" roadmap with long-term market demands.
+---
 
-### Frontend Layer (UI/UX)
-**Status:** In Progress by @Defidoctor10
+## Modular Architecture
 
-The frontend is the "Entry Point" for guests, focusing on high-end animations and seamless Web3 onboarding.
-- **Key Tech:** Next.js 15, Tailwind CSS, Framer Motion (for "butter-smooth" animations).
-- **Identity:** Integration with Privy/Dynamic for Email-to-Wallet onboarding (Social Login).
-- **State Management:** Real-time sync with Solana Devnet via `@solana/web3.js` and our Backend Hub.
-- **Deliverables:** Guest Dashboard, Room Control Interface, and Service Booking.
+### 1. Identity Layer (Solana / Anchor)
+- **Guest PDA**: Immutable, owner-controlled accounts.
+- **Portable States**: Preferences travel with the user, not the hotel property.
+- **On-chain Rewards**: Real-time loyalty issuance via dedicated reward authorities.
 
-### Backend & Settlement Layer (The Hub)
-**Status:** Core Ready by @dex_p (Kyle Meng)
+### 2. Settlement Layer (PUSD / Tokens)
+- **Closed-loop Booking**: Integrated search-to-payment pipeline using $PUSD.
+- **Dynamic Discounts**: Points-to-USD conversion logic enforced by smart contracts.
 
-The "Brain" that bridges the physical IoT world with the Solana blockchain.
-- **Blockchain:** Solana Program (Anchor Framework) deployed on Devnet.
-- **Event Listener:** Real-time monitoring of Program ID: `FqtrHgdYTph1DSP9jDYD7xrKPrjSjCTtnw6fyKMmboYk`.
-- **IoT Bridge:** MQTT protocol integration to sync On-chain Preferences to physical hardware (Nest, Hue, etc.).
-- **Gas Relayer:** Handling meta-transactions to ensure guests never see a "Gas Fee" error.
+### 3. Intelligence Layer (The Hub)
+- **Real-time Bridge**: Sub-second sync between Solana mutations and physical hardware.
+- **Gas Relayer**: Zero-gas UX for guests; backend subsidizes identity and preference updates.
+- **AI Agent**: Natural language interface for room control and booking.
 
-### AI Intelligence Layer (Concierge)
-**Status:** Ready for @federico to implement.
-
-The "Intent Translator" that turns guest natural language into on-chain states.
-- **Core Logic:** Groq (LLM) + Deepgram (voice).
-- **Function:** Mapping *"I'm feeling cold"* -> `Instruction: update_preferences(temp: 24.5)`.
-- **Task:** Define System Prompts and response schemas for the "ORIN Concierge".
+---
 
 ## Tech Stack
 - **L1 & Logic:** `Solana` / `Anchor` / `Rust`
-- **Infrastructure:** `Node.js` / `TypeScript` / `Firebase Real-time DB`
-- **UI/UX:** `Next.js` / `Tailwind CSS` / `Solana Wallet Adapter`
+- **Stablecoin:** `$PUSD`
+- **Infrastructure:** `Node.js` / `TypeScript` / `Firebase Real-time DB` / `Redis`
+- **AI/ML:** `Groq (Llama 3.1)` / `Deepgram (TTS/STT)` / `Cartesia`
+- **UI/UX:** `Next.js 15` / `Vanilla CSS (Premium Aesthetic)` / `Privy (Social Auth)`
+
+---
 
 ## Project Structure
 - `programs/` - The source of truth: Smart contracts in Rust.
-- `backend/` - The nervous system: Node.js listener and Firebase sync logic.
-- `frontend/` - The interface: Web3 dashboard for guest management.
+- `backend/` - The nervous system: Node.js listener, PUSD handler, and AI pipeline.
+- `frontend/` - The interface: Premium Web3 concierge dashboard.
 - `docs/` - Architecture diagrams and vision briefs.
 
 ## Core Team
-- **Shalom:** Founder & Visionary (10+ years in Hospitality)
-- **Kyle Meng:** Technical Lead (Smart Contracts & Backend)
-- **Defi Mantle:** Frontend & UI/UX Engineer
-- **Federico:** AI & Smart Logic Engineer
-- **Victor:** Strategy & M&A
+- **Shalom**: Founder & Visionary (10+ years in Hospitality)
+- **Kyle Meng**: Technical Lead (Smart Contracts & Backend)
+- **Marvelbyte & Defi Mantle**: Frontend & UI/UX Engineer
+- **Federico**: AI & Smart Logic Engineer
 
-Privacy-First Architecture: ORIN utilizes an Off-Chain Data / On-Chain Verification (Hash-Lock) strategy. Sensitive guest preferences are never stored as plaintext on-chain, ensuring 100% GDPR compliance and E2E privacy.
+
+---
+
+## Privacy-First Strategy
+ORIN utilizes an Off-Chain Data / On-Chain Verification (Hash-Lock) strategy. Sensitive guest preferences are never stored as plaintext on-chain, ensuring 100% GDPR compliance and E2E privacy.
 
 ---
 *Built with passion for the Solana Network State Spring 2026 Hackathon.*
