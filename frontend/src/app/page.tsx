@@ -376,10 +376,11 @@ export default function Frontend2App() {
   const [hasMounted, setHasMounted] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const hasGreeted = useRef(false);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const backgroundMusicRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastLocalRoomEditAt = useRef(0);
-  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const derivedAddress = useMemo(() => {
     if (walletAdapter.publicKey) return walletAdapter.publicKey.toBase58();
@@ -541,6 +542,15 @@ export default function Frontend2App() {
       }
       setGuestName(storedName);
       setView("dashboard");
+
+      // Auto-play welcome for returning user
+      if (!hasGreeted.current) {
+        hasGreeted.current = true;
+        const text = `Welcome back, ${storedName}. I'm ORIN, your personal AI concierge. All systems are online.`;
+        fetchTtsAudio(text)
+          .then((tts) => playAudio(tts.audioBase64, tts.mimeType, activeAudioRef))
+          .catch(() => undefined);
+      }
     } else {
       setView("onboarding");
     }
@@ -641,7 +651,13 @@ export default function Frontend2App() {
       localStorage.setItem(`orin_frontend2_room_${derivedAddress}`, JSON.stringify(initialRoomPrefs));
       localStorage.setItem(`orin_frontend2_answers_${derivedAddress}`, JSON.stringify(answers));
     }
-    setMessages([{ id: "welcome", role: "orin", text: `Welcome back, ${finalName}. I'm ORIN, your personal AI concierge. All systems are online.` }]);
+    const welcomeText = `Welcome back, ${finalName}. I'm ORIN, your personal AI concierge. All systems are online.`;
+    setMessages([{ id: "welcome", role: "orin", text: welcomeText }]);
+    hasGreeted.current = true;
+    fetchTtsAudio(welcomeText)
+      .then((tts) => playAudio(tts.audioBase64, tts.mimeType, activeAudioRef))
+      .catch(() => undefined);
+
     setActiveTab("booking");
     setView("dashboard");
     setIsChatBusy(true);
