@@ -179,33 +179,59 @@ export async function mockCreateQuote(rate_id: string): Promise<OrinQuoteCard> {
 export async function mockCreateBooking(params: DuffelBookingRequest): Promise<OrinBookingConfirmation> {
   await new Promise((r) => setTimeout(r, 200));
 
-  const quote = mockQuoteStore.get(params.quote_id);
+  let quote = mockQuoteStore.get(params.quote_id);
+
+  // Fallback: if quote_id was never pre-created (curated search bypass),
+  // look up by hotel name in the curated catalogue and synthesise a quote on-the-fly.
   if (!quote) {
-    throw new Error(`Mock: unknown quote_id '${params.quote_id}'`);
+    const matchedHotel = MOCK_CURATED_OPTIONS.find(
+      (opt) => opt.hotelName === params.quote_id || opt.hotelId === params.quote_id
+    );
+    const nights = 2;
+    const pricePerNight = matchedHotel?.price ?? 299;
+    const total = (pricePerNight * nights).toFixed(2);
+    const tax   = (parseFloat(total) * 0.1).toFixed(2);
+
+    quote = {
+      quote_id:            params.quote_id,
+      accommodation_name:  matchedHotel?.hotelName  ?? "ORIN Premium Hotel",
+      image_url:           matchedHotel?.image       ?? "https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=1200&q=80",
+      address:             matchedHotel?.location    ?? "New York, NY",
+      check_in_date:       "2026-06-10",
+      check_out_date:      "2026-06-12",
+      rooms:               1,
+      total_amount:        total,
+      total_currency:      matchedHotel?.currency    ?? "USD",
+      tax_amount:          tax,
+      due_at_accommodation: null,
+      board_type:          "room_only",
+      cancellation_policy: [],
+      expires_at:          new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    };
   }
 
-  const bookingId = `bok_MOCK_${String(mockBookingCounter++).padStart(10, "0")}`;
-  const confirmRef = `ORIN-${Math.random().toString(36).toUpperCase().slice(2, 8)}`;
-  const leadGuest = params.guests[0];
+  const bookingId   = `bok_MOCK_${String(mockBookingCounter++).padStart(10, "0")}`;
+  const confirmRef  = `ORIN-${Math.random().toString(36).toUpperCase().slice(2, 8)}`;
+  const leadGuest   = params.guests[0];
 
   const confirmation: OrinBookingConfirmation = {
-    booking_id: bookingId,
-    reference: confirmRef,
-    status: "confirmed",
-    hotel_name: quote.accommodation_name,
-    hotel_address: quote.address,
-    image_url: quote.image_url,
-    check_in_date: quote.check_in_date,
-    check_out_date: quote.check_out_date,
-    rooms: quote.rooms,
-    total_amount: quote.total_amount,
-    currency: quote.total_currency,
-    guest_name: `${leadGuest.given_name} ${leadGuest.family_name}`,
-    email: params.email,
-    confirmed_at: new Date().toISOString(),
-    check_in_after_time: "15:00",
-    check_out_before_time: "12:00",
-    amenities: ["spa", "restaurant", "wifi", "concierge"],
+    booking_id:           bookingId,
+    reference:            confirmRef,
+    status:               "confirmed",
+    hotel_name:           quote.accommodation_name,
+    hotel_address:        quote.address,
+    image_url:            quote.image_url,
+    check_in_date:        quote.check_in_date,
+    check_out_date:       quote.check_out_date,
+    rooms:                quote.rooms,
+    total_amount:         quote.total_amount,
+    currency:             quote.total_currency,
+    guest_name:           `${leadGuest.given_name} ${leadGuest.family_name}`,
+    email:                params.email,
+    confirmed_at:         new Date().toISOString(),
+    check_in_after_time:  "15:00",
+    check_out_before_time:"12:00",
+    amenities:            ["spa", "restaurant", "wifi", "concierge"],
   };
 
   mockBookingStore.set(bookingId, confirmation);

@@ -20,6 +20,7 @@ import {
   fetchFastVoiceReply,
   fetchGuestProfileApi,
   fetchTtsAudio,
+  relayTransaction,
   requestPusdFaucet,
   updateGuestAvatar,
   type BookingSummary,
@@ -53,6 +54,7 @@ type SignerWallet = {
 };
 
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
@@ -204,9 +206,9 @@ function getStayQuoteId(option: CuratedStayOption) {
   return option.quote_id || option.quoteId;
 }
 
-async function findAssociatedTokenAddress(mint: PublicKey, owner: PublicKey) {
+async function findAssociatedTokenAddress(mint: PublicKey, owner: PublicKey, tokenProgramId = TOKEN_2022_PROGRAM_ID) {
   const [address] = await PublicKey.findProgramAddress(
-    [owner.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    [owner.toBuffer(), tokenProgramId.toBuffer(), mint.toBuffer()],
     ASSOCIATED_TOKEN_PROGRAM_ID
   );
   return address;
@@ -216,7 +218,8 @@ function createAssociatedTokenAccountIdempotentInstruction(
   payer: PublicKey,
   ata: PublicKey,
   owner: PublicKey,
-  mint: PublicKey
+  mint: PublicKey,
+  tokenProgramId = TOKEN_2022_PROGRAM_ID
 ) {
   return new Transaction().add({
     programId: ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -226,7 +229,7 @@ function createAssociatedTokenAccountIdempotentInstruction(
       { pubkey: owner, isSigner: false, isWritable: false },
       { pubkey: mint, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: tokenProgramId, isSigner: false, isWritable: false },
     ],
     data: Buffer.from([1]),
   }).instructions[0];
@@ -238,14 +241,15 @@ function createTransferCheckedInstruction(
   destination: PublicKey,
   owner: PublicKey,
   amount: bigint,
-  decimals: number
+  decimals: number,
+  tokenProgramId = TOKEN_2022_PROGRAM_ID
 ) {
   const data = Buffer.alloc(10);
   data.writeUInt8(12, 0);
   data.writeBigUInt64LE(amount, 1);
   data.writeUInt8(decimals, 9);
   return new Transaction().add({
-    programId: TOKEN_PROGRAM_ID,
+    programId: tokenProgramId,
     keys: [
       { pubkey: source, isSigner: false, isWritable: true },
       { pubkey: mint, isSigner: false, isWritable: false },
@@ -264,18 +268,51 @@ async function executePusdPaymentTransfer(
     throw new Error("Connected wallet does not support transaction signing.");
   }
 
-  const payer = signerWallet.publicKey;
-  const mint = new PublicKey(details.mint);
+  const feePayerPubkeyStr = process.env.NEXT_PUBLIC_FEE_PAYER_PUBKEY;
+  if (!feePayerPubkeyStr) throw new Error("NEXT_PUBLIC_FEE_PAYER_PUBKEY is not configured.");
+
+  const feePayer  = new PublicKey(feePayerPubkeyStr); // backend pays gas
+  const payer     = signerWallet.publicKey;            // user signs token instruction
+  const mint      = new PublicKey(details.mint);
   const recipient = new PublicKey(details.recipient);
-  const sourceAta = await findAssociatedTokenAddress(mint, payer);
+  const sourceAta    = await findAssociatedTokenAddress(mint, payer);
   const recipientAta = await findAssociatedTokenAddress(mint, recipient);
   const units = BigInt(Math.round(details.amount * 10 ** details.decimals));
   const connection = getConnection();
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
-  const tx = new Transaction({ feePayer: payer, recentBlockhash: blockhash });
 
-  tx.add(createAssociatedTokenAccountIdempotentInstruction(payer, sourceAta, payer, mint));
-  tx.add(createAssociatedTokenAccountIdempotentInstruction(payer, recipientAta, recipient, mint));
+  // ── Pre-flight balance check ──────────────────────────────────────────────
+  // Avoid the cryptic "no record of a prior credit" Solana simulation error by
+  // checking the PUSD token account balance before attempting the transfer.
+  try {
+    const tokenBalance = await connection.getTokenAccountBalance(sourceAta);
+    const balance = BigInt(tokenBalance.value.amount);
+    if (balance < units) {
+      const humanBalance = (Number(balance) / 10 ** details.decimals).toFixed(2);
+      const humanRequired = details.amount.toFixed(2);
+      throw new Error(
+        `Insufficient PUSD balance. You have ${humanBalance} PUSD but need ${humanRequired} PUSD. ` +
+        `Please tap "Airdrop $PUSD" on the Profile tab to get test tokens.`
+      );
+    }
+  } catch (err: any) {
+    // If the token account doesn't exist yet, balance is 0
+    if (err.message?.includes("could not find account") || err.message?.includes("Invalid param")) {
+      throw new Error(
+        `Your wallet has no PUSD token account yet. ` +
+        `Please tap "Airdrop $PUSD" on the Profile tab to get test tokens first.`
+      );
+    }
+    // Re-throw our own friendly errors or real RPC errors
+    throw err;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // feePayer = backend (pays gas); user only signs the token debit instruction
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const tx = new Transaction({ feePayer, recentBlockhash: blockhash });
+
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(feePayer, sourceAta, payer, mint));
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(feePayer, recipientAta, recipient, mint));
   tx.add(createTransferCheckedInstruction(sourceAta, mint, recipientAta, payer, units, details.decimals));
   if (details.memo_hash) {
     tx.add({
@@ -285,10 +322,11 @@ async function executePusdPaymentTransfer(
     });
   }
 
-  const signed = await signerWallet.signTransaction(tx);
-  const signature = await connection.sendRawTransaction(signed.serialize());
-  await connection.confirmTransaction(signature, "confirmed");
-  return signature;
+  // User partial-signs (authorises token debit); backend co-signs & broadcasts
+  const partialSigned = await signerWallet.signTransaction(tx);
+  const serialized = partialSigned.serialize({ requireAllSignatures: false }).toString("base64");
+  const relayResult = await relayTransaction(serialized);
+  return relayResult.signature;
 }
 
 export default function Frontend2App() {
@@ -312,6 +350,14 @@ export default function Frontend2App() {
   const [music, setMusic] = useState("Jazz");
   const [musicUrl, setMusicUrl] = useState("");
   const [musicOn, setMusicOn] = useState(true);
+
+  // Converts a relative /music/... path to a full backend URL.
+  const toAbsoluteMusicUrl = useCallback((url: string) => {
+    if (!url) return "";
+    if (url.startsWith("http")) return url;
+    const base = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+    return `${base}${url}`;
+  }, []);
   const [isSavingRoom, setIsSavingRoom] = useState(false);
   const [isAirdroppingPusd, setIsAirdroppingPusd] = useState(false);
   const [isFinalizingBooking, setIsFinalizingBooking] = useState(false);
@@ -444,8 +490,8 @@ export default function Frontend2App() {
       setMusic(state.music || "Jazz");
       setMusicOn(Boolean(state.music));
     }
-    if (typeof state.music_url === "string") setMusicUrl(state.music_url);
-  }, []);
+    if (typeof state.music_url === "string") setMusicUrl(toAbsoluteMusicUrl(state.music_url));
+  }, [toAbsoluteMusicUrl]);
 
   const refreshGroundTruth = useCallback(async () => {
     if (!guestPda) return;
@@ -480,7 +526,7 @@ export default function Frontend2App() {
             setMusicOn(Boolean(parsed.music));
           }
           if (typeof (parsed as Partial<RoomPreferences> & { music_url?: string }).music_url === "string") {
-            setMusicUrl((parsed as Partial<RoomPreferences> & { music_url?: string }).music_url || "");
+            setMusicUrl(toAbsoluteMusicUrl((parsed as Partial<RoomPreferences> & { music_url?: string }).music_url || ""));
           }
         } catch {
           localStorage.removeItem(`orin_frontend2_room_${derivedAddress}`);
@@ -629,10 +675,7 @@ export default function Frontend2App() {
     setIsFinalizingBooking(true);
     const loadingId = appendMessage({ role: "orin", text: "Submitting booking request..." });
     try {
-      const quoteId = getStayQuoteId(selectedStay);
-      if (!quoteId) {
-        throw new Error("Selected stay is missing quote_id. Please refresh curated stays and choose again.");
-      }
+      const quoteId = getStayQuoteId(selectedStay) || selectedStay.hotelName || "mock_quote";
 
       const response = await bookStay({
         quote_id: quoteId,
@@ -715,7 +758,7 @@ export default function Frontend2App() {
           setMusic(result.aiResult.music || "Jazz");
           setMusicOn(Boolean(result.aiResult.music));
         }
-        if (typeof result.aiResult.music_url === "string") setMusicUrl(result.aiResult.music_url);
+        if (typeof result.aiResult.music_url === "string") setMusicUrl(toAbsoluteMusicUrl(result.aiResult.music_url));
         if (result.aiResult.raw_response) {
           fetchTtsAudio(result.aiResult.raw_response)
             .then((tts) => playAudio(tts.audioBase64, tts.mimeType, activeAudioRef))
