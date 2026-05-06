@@ -23,6 +23,7 @@ import {
   relayTransaction,
   requestPusdFaucet,
   updateGuestAvatar,
+  transcribeAudio,
   type BookingSummary,
   type CuratedSearchRequest,
   type CuratedStayOption,
@@ -371,6 +372,9 @@ export default function Frontend2App() {
   const [bookingSummary, setBookingSummary] = useState<BookingSummary | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [bookingApproved, setBookingApproved] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastLocalRoomEditAt = useRef(0);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -708,6 +712,50 @@ export default function Frontend2App() {
       setIsFinalizingBooking(false);
     }
   };
+ 
+  const toggleRecording = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+ 
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+ 
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+ 
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setIsChatBusy(true);
+        const loadingId = appendMessage({ role: "orin", text: "Transcribing your voice..." });
+        try {
+          const text = await transcribeAudio(audioBlob);
+          if (text && text.trim()) {
+            replaceMessage(loadingId, { text: `"${text}"` });
+            await handleVoiceOrTextCommand(text);
+          } else {
+            replaceMessage(loadingId, { text: "I couldn't hear anything. Please try again." });
+          }
+        } catch (error) {
+          replaceMessage(loadingId, { text: `Transcription failed: ${getErrorMessage(error)}` });
+        } finally {
+          setIsChatBusy(false);
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
+ 
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      appendMessage({ role: "orin", text: "Could not access microphone. Please check your browser permissions." });
+    }
+  };
 
   const handleVoiceOrTextCommand = useCallback(async (input: string) => {
     if (!input.trim()) return;
@@ -867,7 +915,7 @@ export default function Frontend2App() {
         <AnimatePresence mode="wait">
           <motion.section key={activeTab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className={cn("dashboard-screen", `dashboard-screen--${activeTab}`)}>
             {activeTab === "home" && <HomeScreen guestName={guestName} persona={persona} temp={temp} brightness={brightness} lighting={lighting} music={musicOn ? music : "Off"} onChat={() => setActiveTab("chat")} onRoom={() => setActiveTab("room")} onBook={() => void handleCuratedSearch("Recommend premium hotel stays that fit my ORIN profile.")} />}
-            {activeTab === "chat" && <ChatScreen messages={messages} input={chatInput} setInput={setChatInput} isBusy={isChatBusy} onSend={() => void handleVoiceOrTextCommand(chatInput)} onRecommend={() => void handleCuratedSearch("Recommend curated stays for two nights.")} onBack={() => setActiveTab("home")} onSelectStay={selectStay} onConfirm={showPayment} paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} approved={bookingApproved} onFinalize={() => void finalizeBooking()} isFinalizing={isFinalizingBooking} messagesEndRef={messagesEndRef} />}
+            {activeTab === "chat" && <ChatScreen messages={messages} input={chatInput} setInput={setChatInput} isBusy={isChatBusy} onSend={() => void handleVoiceOrTextCommand(chatInput)} onRecommend={() => void handleCuratedSearch("Recommend curated stays for two nights.")} onBack={() => setActiveTab("home")} onSelectStay={selectStay} onConfirm={showPayment} paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} approved={bookingApproved} onFinalize={() => void finalizeBooking()} isFinalizing={isFinalizingBooking} onToggleMic={() => void toggleRecording()} isRecording={isRecording} messagesEndRef={messagesEndRef} />}
             {activeTab === "booking" && <BookingScreen messages={messages} isLoading={isChatBusy} selectedStay={selectedStay} summary={bookingSummary} paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} approved={bookingApproved} onSearch={() => void handleCuratedSearch("Show me premium hotel options for my next stay.")} onSelect={selectStay} onConfirm={showPayment} onFinalize={() => void finalizeBooking()} isFinalizing={isFinalizingBooking} />}
             {activeTab === "room" && <RoomScreen temp={temp} setTemp={updateTemp} brightness={brightness} setBrightness={updateBrightness} lighting={lighting} setLighting={updateLighting} music={music} musicUrl={musicUrl} setMusic={updateMusic} musicOn={musicOn} setMusicOn={updateMusicOn} isSaving={isSavingRoom} onSave={() => void saveRoom()} />}
             {activeTab === "profile" && <ProfileScreen guestName={guestName} walletLabel={walletLabel} profileImage={profileImage} persona={persona} points={loyaltyPoints} temp={temp} brightness={brightness} lighting={lighting} music={musicOn ? music : "Off"} onAvatarChange={handleAvatarChange} onAirdropPusd={() => void handleAirdropPusd()} isAirdroppingPusd={isAirdroppingPusd} />}
@@ -1130,9 +1178,9 @@ function HomeScreen({ guestName, persona, temp, brightness, lighting, music, onC
   return <section className="app-home app-home--figma"><div className="post-home-greeting app-home-greeting"><div><p>Welcome back,</p><strong>{guestName}</strong><span className="app-home-subtitle">Hotel Bellweather, Suite 1234</span></div><span className="chat-status chat-status--home">ORIN ACTIVE</span></div><article className="home-hero-card"><div className="home-hero-copy"><span className="home-hero-kicker">Long-term memory</span><strong>Everything is tuned to your profile</strong><p>{persona}</p></div><div className="home-hero-orb"><div className="home-hero-orb-core" /></div></article><div className="quick-card-list quick-card-list--home">{[{ label: "Music", value: music, icon: Music }, { label: "Lights", value: `${lighting} / ${brightness}%`, icon: Lightbulb }, { label: "Temperature", value: `${temp}°C`, icon: Thermometer }].map((card) => <article className="quick-card quick-card--home" key={card.label}><div className="quick-card-icon quick-card-icon--home"><card.icon size={18} /></div><div className="quick-card-copy"><span>{card.label}</span><strong>{card.value}</strong></div></article>)}</div><div className="home-actions home-actions--figma"><button className="setup-button setup-button--figma home-primary" onClick={onChat} type="button"><span className="home-cta-inner"><Mic size={18} /><span>Talk to ORIN</span></span></button><button className="auth-secondary auth-secondary--figma" onClick={onRoom} type="button">Room control</button><button className="auth-secondary auth-secondary--figma" onClick={onBook} type="button">Curate stays</button></div></section>;
 }
 
-function ChatScreen({ messages, input, setInput, isBusy, onSend, onRecommend, onBack, onSelectStay, onConfirm, paymentMethod, setPaymentMethod, approved, onFinalize, isFinalizing, messagesEndRef }: { messages: ChatMessage[]; input: string; setInput: (value: string) => void; isBusy: boolean; onSend: () => void; onRecommend: () => void; onBack: () => void; onSelectStay: (option: CuratedStayOption) => void; onConfirm: () => void; paymentMethod: PaymentMethod | null; setPaymentMethod: (method: PaymentMethod) => void; approved: boolean; onFinalize: () => void; isFinalizing: boolean; messagesEndRef: React.RefObject<HTMLDivElement | null> }) {
+function ChatScreen({ messages, input, setInput, isBusy, onSend, onRecommend, onBack, onSelectStay, onConfirm, paymentMethod, setPaymentMethod, approved, onFinalize, isFinalizing, onToggleMic, isRecording, messagesEndRef }: { messages: ChatMessage[]; input: string; setInput: (value: string) => void; isBusy: boolean; onSend: () => void; onRecommend: () => void; onBack: () => void; onSelectStay: (option: CuratedStayOption) => void; onConfirm: () => void; paymentMethod: PaymentMethod | null; setPaymentMethod: (method: PaymentMethod) => void; approved: boolean; onFinalize: () => void; isFinalizing: boolean; onToggleMic: () => void; isRecording: boolean; messagesEndRef: React.RefObject<HTMLDivElement | null> }) {
   const hasBookingContext = messages.some((message) => message.card?.type === "stays" || message.card?.type === "confirmation" || message.card?.type === "payment");
-  const statusLabel = isBusy ? "Listening" : hasBookingContext ? "Booking Active" : "Active";
+  const statusLabel = isRecording ? "Listening..." : isBusy ? "Thinking..." : hasBookingContext ? "Booking Active" : "Secure Gateway";
 
   return (
     <section className="booking-chat live-chat-screen">
@@ -1157,7 +1205,7 @@ function ChatScreen({ messages, input, setInput, isBusy, onSend, onRecommend, on
         <div className="composer-input-shell">
           <input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") onSend(); }} placeholder="Tell ORIN..." />
         </div>
-        <button className="mic-button mic-button--voice" type="button" aria-label="Use microphone"><Mic size={18} /></button>
+        <button className={cn("mic-button mic-button--voice", isRecording && "mic-button--recording")} onClick={onToggleMic} type="button" aria-label="Use microphone"><Mic size={18} /></button>
         <button className="mic-button mic-button--send" onClick={onSend} disabled={!input.trim()} type="button" aria-label="Send message"><Send size={18} /></button>
       </div>
 
