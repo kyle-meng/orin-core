@@ -1,7 +1,20 @@
 import type { Metadata } from "next";
+import { Cormorant_Garamond, Nunito_Sans } from "next/font/google";
 import "./globals.css";
 import PrivyClientProvider from "@/providers/PrivyClientProvider";
 import SolanaWalletProvider from "@/providers/SolanaWalletProvider";
+
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  variable: "--font-display",
+  weight: ["600", "700"],
+});
+
+const nunito = Nunito_Sans({
+  subsets: ["latin"],
+  variable: "--font-body",
+  weight: ["400", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "ORIN · Your AI Concierge",
@@ -15,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className={`${cormorant.variable} ${nunito.variable} antialiased`}>
         <PrivyClientProvider>
           <SolanaWalletProvider>{children}</SolanaWalletProvider>
         </PrivyClientProvider>

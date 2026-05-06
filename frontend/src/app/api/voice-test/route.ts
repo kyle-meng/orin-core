@@ -5,6 +5,7 @@ type GuestContext = {
   name: string;
   loyaltyPoints: number;
   history: string[];
+  persona?: string;
 };
 
 type VoiceRequest = {
@@ -80,8 +81,8 @@ function parsePayloadFromText(text: string): OrinPayload {
   if (start < 0 || end <= start) throw new Error("Invalid JSON response from Groq");
   const parsed = JSON.parse(trimmed.slice(start, end + 1));
 
-  // Accept both canonical "temp" and legacy "target_temp_c" from LLM output
-  const rawTemp = parsed.temp ?? parsed.target_temp_c;
+  // Canonical contract: temperature is always `temp`.
+  const rawTemp = parsed.temp;
   const tempValue =
     typeof rawTemp === "number"
       ? rawTemp
@@ -152,12 +153,13 @@ async function askGroq(userInput: string, guestContext: GuestContext): Promise<O
     "",
     `Guest name: ${guestContext.name}`,
     `Loyalty points: ${guestContext.loyaltyPoints}`,
+    guestContext.persona ? `Long-term persona: ${guestContext.persona}` : "",
     `History: ${guestContext.history.join(" | ")}`,
     `User command: ${userInput}`,
     "Return ONLY strict JSON with exact schema. Keep raw_response under 15 words:",
     '{"temp":number,"lighting":"warm"|"cold"|"ambient","services":string[],"raw_response":string}',
     "No markdown, no extra text.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   const text = await callGroq([
     { role: "system", content: SYSTEM_PROMPT },
