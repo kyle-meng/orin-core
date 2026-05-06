@@ -377,6 +377,8 @@ export default function Frontend2App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const hasGreeted = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const musicGainNodeRef = useRef<GainNode | null>(null);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const backgroundMusicRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -598,11 +600,45 @@ export default function Frontend2App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, activeTab]);
 
+  // --- WEB AUDIO INITIALIZATION (iOS Safari Support) ---
+  const initializeWebAudio = useCallback(() => {
+    if (audioCtxRef.current || !backgroundMusicRef.current) return;
+
+    try {
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      const gainNode = ctx.createGain();
+      const source = ctx.createMediaElementSource(backgroundMusicRef.current);
+
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      audioCtxRef.current = ctx;
+      musicGainNodeRef.current = gainNode;
+
+      if (ctx.state === "suspended") ctx.resume();
+    } catch (err) {
+      console.warn("Web Audio initialization failed:", err);
+    }
+  }, []);
+
   // Audio Ducking: Lower volume when in Chat
   useEffect(() => {
+    const targetVolume = activeTab === "chat" || activeTab === "room" ? 0.08 : 0.25;
+
+    // Standard volume fallback
     if (backgroundMusicRef.current) {
-      const targetVolume = activeTab === "chat" ? 0.08 : 0.3;
       backgroundMusicRef.current.volume = targetVolume;
+    }
+
+    // Web Audio (iOS) logic
+    if (musicGainNodeRef.current) {
+      const ctx = audioCtxRef.current;
+      if (ctx) {
+        musicGainNodeRef.current.gain.setTargetAtTime(targetVolume, ctx.currentTime, 0.2);
+      } else {
+        musicGainNodeRef.current.gain.value = targetVolume;
+      }
     }
   }, [activeTab]);
 
@@ -775,9 +811,14 @@ export default function Frontend2App() {
   };
  
   const toggleRecording = async () => {
+    initializeWebAudio();
     if (isRecording) {
       mediaRecorderRef.current?.stop();
       setIsRecording(false);
+      // Restore volume
+      if (musicGainNodeRef.current) {
+        musicGainNodeRef.current.gain.value = activeTab === "chat" || activeTab === "room" ? 0.08 : 0.25;
+      }
       return;
     }
  
@@ -811,6 +852,11 @@ export default function Frontend2App() {
         }
       };
  
+      // Duck music even further on iOS during active recording to prevent system-gain spikes
+      if (musicGainNodeRef.current) {
+        musicGainNodeRef.current.gain.value = 0.02;
+      }
+
       recorder.start();
       setIsRecording(true);
     } catch (error) {
@@ -949,7 +995,12 @@ export default function Frontend2App() {
   if (!hasMounted) return <div className="app-shell" />;
  
   if (view === "landing") {
-    return <Landing ready={ready} onLogin={login} />;
+    const handleLogin = () => {
+    initializeWebAudio();
+    login();
+  };
+
+  return <Landing ready={ready} onLogin={handleLogin} />;
   }
  
   if (view === "onboarding") {
