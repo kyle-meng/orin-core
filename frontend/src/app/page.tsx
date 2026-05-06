@@ -31,8 +31,8 @@ import {
   type PusdPaymentDetails,
 } from "../lib/api";
 import { deriveGuestPda } from "../lib/pda";
-import { getConnection, getProgram, getProvider } from "../lib/solana";
-import { saveManualPreferences, saveVoicePreferences, type RoomPreferences } from "../lib/savePreferences";
+import { getConnection, getProgram, getProvider, initializeGuestOnChain } from "../lib/solana";
+import { saveManualPreferences, saveVoicePreferences, type RoomPreferences, getRelayOpts } from "../lib/savePreferences";
 import { cn } from "../lib/utils";
 import idl from "../../idl/orin_identity.json";
 
@@ -265,7 +265,9 @@ async function executePusdPaymentTransfer(
   signerWallet: SignerWallet,
   details: PusdPaymentDetails,
   program: any,
-  guestPda: PublicKey
+  guestPda: PublicKey,
+  isOnChainReady: boolean,
+  guestName: string
 ) {
   if (!signerWallet.signTransaction) {
     throw new Error("Connected wallet does not support transaction signing.");
@@ -313,6 +315,22 @@ async function executePusdPaymentTransfer(
   // feePayer = backend (pays gas); user only signs the token debit instruction
   const { blockhash } = await connection.getLatestBlockhash("confirmed");
   const tx = new Transaction({ feePayer, recentBlockhash: blockhash });
+ 
+  // ─── AUTO-INITIALIZE Identity if not ready ─────────────────────────────────
+  if (!isOnChainReady) {
+    const { identifierHash } = deriveGuestPda(guestName, payer);
+    const initIx = await program.methods
+      .initializeGuest(identifierHash, guestName)
+      .accounts({
+        guestProfile: guestPda,
+        owner: payer,
+        feePayer: feePayer,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+    tx.add(initIx);
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   tx.add(createAssociatedTokenAccountIdempotentInstruction(feePayer, sourceAta, payer, mint));
   tx.add(createAssociatedTokenAccountIdempotentInstruction(feePayer, recipientAta, recipient, mint));
@@ -356,6 +374,8 @@ export default function Frontend2App() {
   const [guestName, setGuestName] = useState("");
   const [profile, setProfile] = useState<GuestProfileRecord | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [isOnChainReady, setIsOnChainReady] = useState(false);
+  const [isInitializingIdentity, setIsInitializingIdentity] = useState(false);
   const [onboardingName, setOnboardingName] = useState("");
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -597,7 +617,15 @@ export default function Frontend2App() {
     if (!guestPda) return;
     try {
       const connection = getConnection();
-      const subscription = connection.onAccountChange(guestPda, () => {
+      if (!guestPda) return; // Double check
+
+      // Check on-chain existence immediately
+      connection.getAccountInfo(guestPda).then((info) => {
+        setIsOnChainReady(!!info);
+      }).catch(() => setIsOnChainReady(false));
+
+      const subscription = connection.onAccountChange(guestPda, (updated) => {
+        setIsOnChainReady(true); // Account change detected means it exists
         void refreshGroundTruth();
         // Slight delay to allow backend listener to finish Firestore sync
         setTimeout(() => {
@@ -613,6 +641,33 @@ export default function Frontend2App() {
       console.warn(`[ORIN] WebSocket listener unavailable: ${getErrorMessage(error)}`);
     }
   }, [guestPda, refreshGroundTruth]);
+
+  const handleInitializeIdentity = async () => {
+    if (!signerWallet || !guestPda || !guestName.trim()) return;
+    setIsInitializingIdentity(true);
+    try {
+      const provider = getProvider(signerWallet);
+      const program = getProgram(provider, idl as Idl);
+      const { identifierHash } = deriveGuestPda(guestName.trim(), effectivePublicKey!);
+
+      await initializeGuestOnChain(
+        program,
+        guestPda,
+        effectivePublicKey!,
+        identifierHash,
+        guestName.trim(),
+        getRelayOpts()
+      );
+      
+      setIsOnChainReady(true);
+      appendMessage({ role: "orin", text: "Identity initialized on Solana. You're now fully synchronized." });
+    } catch (err) {
+      console.error("Identity initialization failed:", err);
+      appendMessage({ role: "orin", text: `Identity initialization failed: ${getErrorMessage(err)}` });
+    } finally {
+      setIsInitializingIdentity(false);
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -815,7 +870,14 @@ export default function Frontend2App() {
         const program = getProgram(provider, idl as Idl);
 
         replaceMessage(loadingId, { text: response.message || "Payment required. Please approve the $PUSD transaction in your wallet." });
-        paymentSignature = await executePusdPaymentTransfer(signerWallet!, response.payment_details, program, guestPda!);
+        paymentSignature = await executePusdPaymentTransfer(
+          signerWallet!, 
+          response.payment_details, 
+          program, 
+          guestPda!,
+          isOnChainReady,
+          guestName.trim()
+        );
       }
 
       setBookingApproved(true);
@@ -1054,10 +1116,10 @@ export default function Frontend2App() {
         <AnimatePresence mode="wait">
           <motion.section key={activeTab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className={cn("dashboard-screen", `dashboard-screen--${activeTab}`)}>
             {activeTab === "home" && <HomeScreen guestName={guestName} persona={persona} temp={temp} brightness={brightness} lighting={lighting} music={musicOn ? music : "Off"} onChat={() => setActiveTab("chat")} onRoom={() => setActiveTab("room")} onBook={() => void handleCuratedSearch("Recommend premium hotel stays that fit my ORIN profile.")} />}
-            {activeTab === "chat" && <ChatScreen messages={messages} input={chatInput} setInput={setChatInput} isBusy={isChatBusy} onSend={() => void handleVoiceOrTextCommand(chatInput)} onRecommend={() => void handleCuratedSearch("Recommend curated stays for two nights.")} onBack={() => setActiveTab("home")} onSelectStay={selectStay} onConfirm={showPayment} paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} approved={bookingApproved} onFinalize={() => void finalizeBooking()} isFinalizing={isFinalizingBooking} onToggleMic={() => void toggleRecording()} isRecording={isRecording} messagesEndRef={messagesEndRef} />}
+            {activeTab === "chat" && <ChatScreen messages={messages} input={chatInput} setInput={setChatInput} isBusy={isChatBusy} onSend={() => void handleVoiceOrTextCommand(chatInput)} onRecommend={() => void handleCuratedSearch("Recommend curated stays for two nights.")} onBack={() => setActiveTab("home")} onSelectStay={selectStay} onConfirm={showPayment} paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} approved={bookingApproved} onFinalize={() => void finalizeBooking()} isFinalizing={isFinalizingBooking} onToggleMic={() => void toggleRecording()} isRecording={isRecording} messagesEndRef={messagesEndRef} isOnChainReady={isOnChainReady} onInitialize={handleInitializeIdentity} isInitializingIdentity={isInitializingIdentity} />}
             {activeTab === "booking" && <BookingScreen messages={messages} isLoading={isChatBusy} selectedStay={selectedStay} summary={bookingSummary} paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} approved={bookingApproved} onSearch={() => void handleCuratedSearch("Show me premium hotel options for my next stay.")} onSelect={selectStay} onConfirm={showPayment} onFinalize={() => void finalizeBooking()} isFinalizing={isFinalizingBooking} />}
-            {activeTab === "room" && <RoomScreen temp={temp} setTemp={updateTemp} brightness={brightness} setBrightness={updateBrightness} lighting={lighting} setLighting={updateLighting} music={music} musicUrl={musicUrl} setMusic={updateMusic} musicOn={musicOn} setMusicOn={updateMusicOn} isSaving={isSavingRoom} onSave={() => void saveRoom()} />}
-            {activeTab === "profile" && <ProfileScreen guestName={guestName} walletLabel={walletLabel} profileImage={profileImage} persona={persona} points={loyaltyPoints} temp={temp} brightness={brightness} lighting={lighting} music={musicOn ? music : "Off"} onAvatarChange={handleAvatarChange} onAirdropPusd={() => void handleAirdropPusd()} isAirdroppingPusd={isAirdroppingPusd} />}
+            {activeTab === "room" && <RoomScreen temp={temp} setTemp={updateTemp} brightness={brightness} setBrightness={updateBrightness} lighting={lighting} setLighting={updateLighting} music={music} musicUrl={musicUrl} setMusic={updateMusic} musicOn={musicOn} setMusicOn={updateMusicOn} isSaving={isSavingRoom} onSave={saveRoom} isOnChainReady={isOnChainReady} />}
+            {activeTab === "profile" && <ProfileScreen guestName={guestName} walletLabel={walletLabel} profileImage={profileImage} persona={persona} points={loyaltyPoints} temp={temp} brightness={brightness} lighting={lighting} music={musicOn ? music : "Off"} onAvatarChange={handleAvatarChange} onAirdropPusd={() => void handleAirdropPusd()} isAirdroppingPusd={isAirdroppingPusd} isOnChainReady={isOnChainReady} onInitialize={handleInitializeIdentity} isInitializing={isInitializingIdentity} />}
           </motion.section>
         </AnimatePresence>
  
@@ -1329,7 +1391,7 @@ function HomeScreen({ guestName, persona, temp, brightness, lighting, music, onC
   return <section className="app-home app-home--figma"><div className="post-home-greeting app-home-greeting"><div><p>Welcome back,</p><strong>{guestName}</strong><span className="app-home-subtitle">Hotel Bellweather, Suite 1234</span></div><span className="chat-status chat-status--home">ORIN ACTIVE</span></div><article className="home-hero-card"><div className="home-hero-copy"><span className="home-hero-kicker">Long-term memory</span><strong>Everything is tuned to your profile</strong><p>{persona}</p></div><div className="home-hero-orb"><div className="home-hero-orb-core" /></div></article><div className="quick-card-list quick-card-list--home">{[{ label: "Music", value: music, icon: Music }, { label: "Lights", value: `${lighting} / ${brightness}%`, icon: Lightbulb }, { label: "Temperature", value: `${temp}°C`, icon: Thermometer }].map((card) => <article className="quick-card quick-card--home" key={card.label}><div className="quick-card-icon quick-card-icon--home"><card.icon size={18} /></div><div className="quick-card-copy"><span>{card.label}</span><strong>{card.value}</strong></div></article>)}</div><div className="home-actions home-actions--figma"><button className="setup-button setup-button--figma home-primary" onClick={onChat} type="button"><span className="home-cta-inner"><Mic size={18} /><span>Talk to ORIN</span></span></button><button className="auth-secondary auth-secondary--figma" onClick={onRoom} type="button">Room control</button><button className="auth-secondary auth-secondary--figma" onClick={onBook} type="button">Curate stays</button></div></section>;
 }
 
-function ChatScreen({ messages, input, setInput, isBusy, onSend, onRecommend, onBack, onSelectStay, onConfirm, paymentMethod, setPaymentMethod, approved, onFinalize, isFinalizing, onToggleMic, isRecording, messagesEndRef }: { messages: ChatMessage[]; input: string; setInput: (value: string) => void; isBusy: boolean; onSend: () => void; onRecommend: () => void; onBack: () => void; onSelectStay: (option: CuratedStayOption) => void; onConfirm: () => void; paymentMethod: PaymentMethod | null; setPaymentMethod: (method: PaymentMethod) => void; approved: boolean; onFinalize: () => void; isFinalizing: boolean; onToggleMic: () => void; isRecording: boolean; messagesEndRef: React.RefObject<HTMLDivElement | null> }) {
+function ChatScreen({ messages, input, setInput, isBusy, onSend, onRecommend, onBack, onSelectStay, onConfirm, paymentMethod, setPaymentMethod, approved, onFinalize, isFinalizing, onToggleMic, isRecording, messagesEndRef, isOnChainReady, onInitialize, isInitializingIdentity }: { messages: ChatMessage[]; input: string; setInput: (value: string) => void; isBusy: boolean; onSend: () => void; onRecommend: () => void; onBack: () => void; onSelectStay: (option: CuratedStayOption) => void; onConfirm: () => void; paymentMethod: PaymentMethod | null; setPaymentMethod: (method: PaymentMethod) => void; approved: boolean; onFinalize: () => void; isFinalizing: boolean; onToggleMic: () => void; isRecording: boolean; messagesEndRef: React.RefObject<HTMLDivElement | null>; isOnChainReady: boolean; onInitialize: () => void; isInitializingIdentity: boolean }) {
   const hasBookingContext = messages.some((message) => message.card?.type === "stays" || message.card?.type === "confirmation" || message.card?.type === "payment");
   const statusLabel = isRecording ? "Listening..." : isBusy ? "Thinking..." : hasBookingContext ? "Booking Active" : "Secure Gateway";
 
@@ -1392,7 +1454,7 @@ function PaymentSummary({ summary, paymentMethod, setPaymentMethod, approved, on
   return <article className="payment-summary-card"><h2>PAYMENT SUMMARY</h2>{summary.priceLines.map((line) => <div className="payment-line" key={line.label}><span>{line.label}</span><b>{line.lineType === "discount" ? "-" : ""}{formatCurrency(Math.abs(line.amount), summary.currency)}</b></div>)}<div className="payment-total"><span>Total</span><b>{formatCurrency(summary.payableTotal, summary.currency)}</b></div><div className="setup-panel"><div className="setup-avatar"><Ticket size={18} /></div><div><span>ORIN POINTS</span><p>Redeeming {summary.pointsRedemption.pointsUsed} points for {formatCurrency(summary.pointsRedemption.discountAmount, summary.currency)} off</p></div></div>{!passive ? <><div className="payment-method-grid"><button className={cn("payment-method", paymentMethod === "pusd" && "payment-method--active")} onClick={() => setPaymentMethod("pusd")} type="button">$PUSD</button><button className={cn("payment-method", paymentMethod === "mastercard" && "payment-method--active")} onClick={() => setPaymentMethod("mastercard")} type="button">Mastercard</button></div><button className="auth-primary auth-primary--enabled payment-button" disabled={!paymentMethod || approved || isFinalizing} onClick={onFinalize} type="button">{approved ? "Booking approved" : isFinalizing ? "Finalizing..." : paymentMethod ? "Final approval" : "Select payment method"}</button></> : null}</article>;
 }
 
-function RoomScreen({ temp, setTemp, brightness, setBrightness, lighting, setLighting, music, musicUrl, setMusic, musicOn, setMusicOn, isSaving, onSave }: { temp: number; setTemp: (value: number) => void; brightness: number; setBrightness: (value: number) => void; lighting: LightingMode; setLighting: (value: LightingMode) => void; music: string; musicUrl: string; setMusic: (value: string) => void; musicOn: boolean; setMusicOn: (value: boolean) => void; isSaving: boolean; onSave: () => void }) {
+function RoomScreen({ temp, setTemp, brightness, setBrightness, lighting, setLighting, music, musicUrl, setMusic, musicOn, setMusicOn, isSaving, onSave, isOnChainReady }: { temp: number; setTemp: (value: number) => void; brightness: number; setBrightness: (value: number) => void; lighting: LightingMode; setLighting: (value: LightingMode) => void; music: string; musicUrl: string; setMusic: (value: string) => void; musicOn: boolean; setMusicOn: (value: boolean) => void; isSaving: boolean; onSave: () => void; isOnChainReady: boolean }) {
   return <section className="room-screen"><header className="room-header"><div className="room-header-copy"><strong>Room Control</strong><span>Live canonical state</span></div><button className="bookmark-button" type="button"><Zap size={18} /></button></header><div className="preset-strip">{[{ label: "Relax", temp: 22, brightness: 35, lighting: "warm" as LightingMode, music: "Jazz" }, { label: "Focus", temp: 21, brightness: 85, lighting: "cold" as LightingMode, music: "Lo-Fi" }, { label: "Sleep", temp: 19, brightness: 10, lighting: "ambient" as LightingMode, music: "Ambient" }].map((preset) => <button className="preset-pill" key={preset.label} onClick={() => { setTemp(preset.temp); setBrightness(preset.brightness); setLighting(preset.lighting); setMusic(preset.music); setMusicOn(true); }} type="button">{preset.label}</button>)}</div><ControlPanel label="TEMPERATURE" value={temp} min={16} max={30} suffix="°C" onChange={setTemp} /><ControlPanel label="LIGHTS" value={brightness} min={0} max={100} suffix="%" onChange={setBrightness} /><article className="music-panel"><div className="music-panel-header"><strong>♫ MUSIC</strong><span>{musicOn ? music : "Off"}</span></div><div className="music-options">{["Jazz", "Lo-Fi", "Ambient", "Classical"].map((option) => <button className={cn("music-option", musicOn && music === option && "music-option--active")} key={option} onClick={() => { setMusic(option); setMusicOn(true); }} type="button">{option}</button>)}<button className={cn("music-option", !musicOn && "music-option--active")} onClick={() => setMusicOn(false)} type="button">Off</button></div></article><button className="auth-primary auth-primary--enabled room-save" onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Syncing..." : "Save My Setup"} <span className="button-arrow">→</span></button></section>;
 }
 
@@ -1401,6 +1463,7 @@ function ControlPanel({ label, value, min, max, suffix, onChange }: { label: str
   return <article className="control-panel"><div className="control-top"><strong>{label}</strong><b>{value}{suffix}</b></div><div className="slider-shell"><div className="slider-track" /><div className="slider-progress" style={{ width: `${percentage}%` }} /><input className="slider-input" max={max} min={min} onChange={(event) => onChange(Number(event.target.value))} type="range" value={value} /></div><div className="control-range"><span>{min}{suffix}</span><span>{max}{suffix}</span></div></article>;
 }
 
-function ProfileScreen({ guestName, walletLabel, profileImage, persona, points, temp, brightness, lighting, music, onAvatarChange, onAirdropPusd, isAirdroppingPusd }: { guestName: string; walletLabel: string; profileImage: string | null; persona: string; points: number; temp: number; brightness: number; lighting: string; music: string; onAvatarChange: (event: React.ChangeEvent<HTMLInputElement>) => void; onAirdropPusd: () => void; isAirdroppingPusd: boolean }) {
-  return <section className="mobile-profile mobile-profile--post-onboarding"><article className="identity-card"><div className="identity-top"><div className="identity-avatar">{profileImage ? <Image src={profileImage} alt="Profile" fill className="object-cover" unoptimized /> : <UserRound />}</div><div className="identity-copy"><strong>{guestName}</strong><span>{walletLabel}</span><p>Member since May 2026</p></div><label className="verified-badge"><Camera size={13} /> Photo<input className="hidden" type="file" accept="image/*" onChange={onAvatarChange} /></label></div><div className="identity-stats"><span>ORIN Points</span><strong className="identity-points">{points} pts</strong></div><div className="identity-meter"><div /></div><div className="identity-foot"><span>{persona}</span></div></article><div className="profile-section"><h2>Saved Preferences</h2><div className="profile-list-card">{[{ label: `Climate ${temp}°C`, icon: Thermometer }, { label: `Lighting ${lighting} / ${brightness}%`, icon: Lightbulb }, { label: `Music ${music}`, icon: Music }].map((item) => <div className="profile-row" key={item.label}><span className="profile-row-icon"><item.icon size={18} /></span><strong>{item.label}</strong></div>)}</div></div><div className="profile-section"><h2>Wallet</h2><div className="profile-wallet-card"><span className="profile-row-icon"><Wallet size={18} /></span><div className="profile-wallet-copy"><strong>Connected Wallet</strong><small>{walletLabel}</small></div><span className="wallet-ok"><Check size={16} /></span></div><button className="auth-primary auth-primary--enabled pusd-airdrop-button" onClick={onAirdropPusd} disabled={isAirdroppingPusd} type="button">{isAirdroppingPusd ? "Airdropping..." : "Airdrop $PUSD"}</button></div></section>;
+function ProfileScreen({ guestName, walletLabel, profileImage, persona, points, temp, brightness, lighting, music, onAvatarChange, onAirdropPusd, isAirdroppingPusd, isOnChainReady, onInitialize, isInitializing }: { guestName: string; walletLabel: string; profileImage: string | null; persona: string; points: number; temp: number; brightness: number; lighting: string; music: string; onAvatarChange: (event: React.ChangeEvent<HTMLInputElement>) => void; onAirdropPusd: () => void; isAirdroppingPusd: boolean; isOnChainReady: boolean; onInitialize: () => void; isInitializing: boolean }) {
+  return <section className="mobile-profile mobile-profile--post-onboarding">
+    <article className="identity-card"><div className="identity-top"><div className="identity-avatar">{profileImage ? <Image src={profileImage} alt="Profile" fill className="object-cover" unoptimized /> : <UserRound />}</div><div className="identity-copy"><strong>{guestName}</strong><span>{walletLabel}</span><p>Member since May 2026</p></div><label className="verified-badge"><Camera size={13} /> Photo<input className="hidden" type="file" accept="image/*" onChange={onAvatarChange} /></label></div><div className="identity-stats"><span>ORIN Points</span><strong className="identity-points">{points} pts</strong></div><div className="identity-meter"><div /></div><div className="identity-foot"><span>{persona}</span></div></article><div className="profile-section"><h2>Saved Preferences</h2><div className="profile-list-card">{[{ label: `Climate ${temp}°C`, icon: Thermometer }, { label: `Lighting ${lighting} / ${brightness}%`, icon: Lightbulb }, { label: `Music ${music}`, icon: Music }].map((item) => <div className="profile-row" key={item.label}><span className="profile-row-icon"><item.icon size={18} /></span><strong>{item.label}</strong></div>)}</div></div><div className="profile-section"><h2>Wallet</h2><div className="profile-wallet-card"><span className="profile-row-icon"><Wallet size={18} /></span><div className="profile-wallet-copy"><strong>Connected Wallet</strong><small>{walletLabel}</small></div><span className="wallet-ok"><Check size={16} /></span></div><button className="auth-primary auth-primary--enabled pusd-airdrop-button" onClick={onAirdropPusd} disabled={isAirdroppingPusd} type="button">{isAirdroppingPusd ? "Airdropping..." : "Airdrop $PUSD"}</button></div></section>;
 }
